@@ -345,6 +345,8 @@ export interface FlightState {
   apogee: number;
   maxSpeed: number;
   chuteDeployed: boolean;
+  liftedOff: boolean;   // becomes true once the rocket rises off the pad
+  impactSpeed: number;  // vertical speed captured at ground contact (m/s)
 }
 
 export interface EnvParams {
@@ -490,6 +492,10 @@ describe('thrustCurve', () => {
     expect(impulse).toBeCloseTo(c6.totalImpulseNs, 1);
     expect(Math.abs(impulse - c6.totalImpulseNs) / c6.totalImpulseNs).toBeLessThan(0.01);
   });
+  it('conserves impulse even with a timestep that does not divide the burn', () => {
+    const impulse = integrateImpulse(c6, 0.07); // 1.6 / 0.07 is non-integer
+    expect(Math.abs(impulse - c6.totalImpulseNs) / c6.totalImpulseNs).toBeLessThan(0.02);
+  });
   it('has a peak thrust above the average', () => {
     let peak = 0;
     for (let t = 0; t <= c6.burnTimeS; t += 0.005) peak = Math.max(peak, thrustAt(c6, t));
@@ -535,7 +541,8 @@ export function thrustAt(motor: Motor, t: number): number {
 export function integrateImpulse(motor: Motor, dt = 0.001): number {
   let sum = 0;
   for (let t = 0; t < motor.burnTimeS; t += dt) {
-    sum += thrustAt(motor, t + dt / 2) * dt;
+    const h = Math.min(dt, motor.burnTimeS - t); // clamp final interval to the burn window
+    sum += thrustAt(motor, t + h / 2) * h;
   }
   return sum;
 }
@@ -836,7 +843,7 @@ export const testRocket: Rocket = {
 };
 
 export const testMotor: Motor = {
-  id: 'C6-5', class: 'C', totalImpulseNs: 10, avgThrustN: 6, burnTimeS: 1.6,
+  id: 'C6-5', class: 'C', totalImpulseNs: 10, avgThrustN: 6, burnTimeS: 1.667,
   massTotalKg: 0.0258, massPropKg: 0.0108, delayS: 5,
 };
 
@@ -874,6 +881,8 @@ export function initialFlightState(config: SimConfig): FlightState {
     apogee: 0,
     maxSpeed: 0,
     chuteDeployed: false,
+    liftedOff: false,
+    impactSpeed: 0,
   };
 }
 
@@ -903,24 +912,53 @@ Expected: PASS.
 import { describe, it, expect } from 'vitest';
 import { Simulation } from '../../src/sim/simulation';
 import { makeTestConfig } from './fixtures';
+import type { FlightPhase } from '../../src/sim/types';
 
 function runToCompletion(sim: Simulation, maxSteps = 200000): void {
   let n = 0;
-  sim.step(); // leaves 'idle' -> 'boost' on first tick
   while (!sim.done && n < maxSteps) { sim.step(); n++; }
 }
 
+function firstNominalSeed(): number {
+  for (let seed = 0; seed < 100; seed++) {
+    const sim = new Simulation(makeTestConfig({ seed }));
+    runToCompletion(sim);
+    if (sim.state.outcome === 'nominal') return seed;
+  }
+  throw new Error('no nominal flight found in 100 seeds');
+}
+
 describe('Simulation', () => {
-  it('passes through boost, coast, apogee, descent, landed in order', () => {
+  it('rises off the pad (does not land at ignition)', () => {
     const sim = new Simulation(makeTestConfig());
-    const seen = new Set<string>();
-    sim.step();
-    seen.add(sim.state.phase);
+    for (let i = 0; i < 300; i++) sim.step(); // ~2.5 s
+    expect(sim.state.liftedOff).toBe(true);
+    expect(sim.state.apogee).toBeGreaterThan(1);
+  });
+
+  it('visits boost -> coast -> apogee -> descent in that exact order, then terminates', () => {
+    const sim = new Simulation(makeTestConfig());
+    const seq: FlightPhase[] = [];
     let n = 0;
-    while (!sim.done && n < 200000) { sim.step(); seen.add(sim.state.phase); n++; }
-    for (const phase of ['boost', 'coast', 'apogee', 'descent', 'landed']) {
-      expect(seen.has(phase)).toBe(true);
+    while (!sim.done && n < 200000) {
+      sim.step();
+      if (seq[seq.length - 1] !== sim.state.phase) seq.push(sim.state.phase);
+      n++;
     }
+    const order: FlightPhase[] = ['boost', 'coast', 'apogee', 'descent'];
+    let idx = 0;
+    for (const p of seq) if (p === order[idx]) idx++;
+    expect(idx).toBe(order.length);            // all four appeared, in order
+    expect(sim.done).toBe(true);
+    expect(['landed', 'failed']).toContain(sim.state.phase);
+  });
+
+  it('a nominal flight deploys the chute and lands softly', () => {
+    const sim = new Simulation(makeTestConfig({ seed: firstNominalSeed() }));
+    runToCompletion(sim);
+    expect(sim.state.chuteDeployed).toBe(true);
+    expect(sim.state.phase).toBe('landed');
+    expect(sim.state.position.y).toBeCloseTo(0, 1);
   });
 
   it('reaches a plausible apogee for a C6 on a light rocket', () => {
@@ -928,13 +966,6 @@ describe('Simulation', () => {
     runToCompletion(sim);
     expect(sim.state.apogee).toBeGreaterThan(30);
     expect(sim.state.apogee).toBeLessThan(600);
-  });
-
-  it('lands back near ground height', () => {
-    const sim = new Simulation(makeTestConfig());
-    runToCompletion(sim);
-    expect(sim.state.phase).toBe('landed');
-    expect(sim.state.position.y).toBeCloseTo(0, 1);
   });
 
   it('is deterministic for a fixed seed', () => {
@@ -946,11 +977,53 @@ describe('Simulation', () => {
   });
 
   it('bigger total impulse yields higher apogee', () => {
-    const small = new Simulation(makeTestConfig());
-    const bigMotor = { ...makeTestConfig().motor, totalImpulseNs: 20, avgThrustN: 12 };
-    const big = new Simulation(makeTestConfig({ motor: bigMotor }));
+    // Raise the big config's rated impulse so the larger motor is within limits
+    // (no CATO), isolating the apogee comparison.
+    const base = makeTestConfig();
+    const small = new Simulation(base);
+    const bigMotor = { ...base.motor, totalImpulseNs: 20, avgThrustN: 12, burnTimeS: 1.667 };
+    const big = new Simulation(makeTestConfig({
+      motor: bigMotor,
+      rocket: { ...base.rocket, maxMotorImpulseNs: 25 },
+    }));
     runToCompletion(small); runToCompletion(big);
     expect(big.state.apogee).toBeGreaterThan(small.state.apogee);
+  });
+
+  it('a tumble-recovery rocket (no chute) can still land softly', () => {
+    // Streamer/tumble recovery must not crash on every nominal flight.
+    const rocket = { ...makeTestConfig().rocket, massEmptyKg: 0.013, chuteDiameterM: 0 };
+    for (let seed = 0; seed < 100; seed++) {
+      const sim = new Simulation(makeTestConfig({ seed, rocket }));
+      runToCompletion(sim);
+      if (sim.state.outcome === 'nominal') {
+        expect(sim.state.phase).toBe('landed');
+        expect(sim.state.impactSpeed).toBeLessThanOrEqual(15);
+        return;
+      }
+    }
+    throw new Error('no nominal tumble-recovery flight found in 100 seeds');
+  });
+
+  it('a too-short ejection delay lowers apogee via early chute drag', () => {
+    const base = makeTestConfig({ seed: 4 });
+    const early = new Simulation({ ...base, motor: { ...base.motor, delayS: 0 } });
+    const proper = new Simulation({ ...base, motor: { ...base.motor, delayS: 5 } });
+    runToCompletion(early); runToCompletion(proper);
+    if (early.state.chuteDeployed && proper.state.chuteDeployed) {
+      expect(early.state.apogee).toBeLessThanOrEqual(proper.state.apogee);
+    }
+  });
+
+  it('a motor that cannot lift the rocket fails without an infinite loop', () => {
+    const heavy = makeTestConfig({
+      rocket: { ...makeTestConfig().rocket, massEmptyKg: 5 }, // absurdly heavy -> TWR < 1
+    });
+    const sim = new Simulation(heavy);
+    runToCompletion(sim);
+    expect(sim.done).toBe(true);
+    expect(sim.state.phase).toBe('failed');
+    expect(sim.state.liftedOff).toBe(false);
   });
 });
 ```
@@ -973,12 +1046,25 @@ import { mulberry32, type Rng } from './rng';
 import { applyOutcome } from './outcomes';
 
 export const DT = 1 / 120;
+const HARD_LANDING_MPS = 15;    // impact speed above which a landing is a crash
+const MAX_FLIGHT_TIME = 600;    // absolute safety terminal (s)
+const TUMBLE_AREA_FACTOR = 8;   // tumbling/streamer recovery presents ~8x body area
+
+// Effective recovery drag area/Cd once recovery has deployed. A parachute uses the
+// canopy; a chuteless (streamer/tumble) rocket uses an inflated body area so a light
+// rocket still descends survivably rather than ballistically.
+function recoveryArea(rocket: SimConfig['rocket']): number {
+  return rocket.chuteDiameterM > 0
+    ? Math.PI * (rocket.chuteDiameterM / 2) ** 2
+    : Math.PI * (rocket.diameterM / 2) ** 2 * TUMBLE_AREA_FACTOR;
+}
 
 export class Simulation {
   readonly state: FlightState;
   private readonly config: SimConfig;
   private readonly rng: Rng;
   private readonly launchPos: Vec3;
+  private ejected = false;
 
   constructor(config: SimConfig) {
     this.config = config;
@@ -995,24 +1081,29 @@ export class Simulation {
     if (this.done) return;
     const s = this.state;
     const { rocket, motor, environment } = this.config;
+    const ground = environment.groundHeight;
 
     if (s.phase === 'idle') {
       s.phase = 'boost';
       applyOutcome(s, this.config, this.rng, 'ignition');
-      if (s.phase === 'failed') return;
+      if (s.phase === 'failed') return; // CATO on the pad
     }
 
     s.time += DT;
 
-    const thrustN = s.phase === 'boost' ? thrustAt(motor, s.time) : 0;
+    const thrustN = s.time <= motor.burnTimeS ? thrustAt(motor, s.time) : 0;
     const burnedProp = motor.massPropKg * Math.min(1, s.time / motor.burnTimeS);
     s.mass = rocket.massEmptyKg + motor.massTotalKg - burnedProp;
 
-    const useChute = s.chuteDeployed;
-    const refArea = useChute
-      ? Math.PI * (rocket.chuteDiameterM / 2) ** 2
-      : Math.PI * (rocket.diameterM / 2) ** 2;
-    const cd = useChute ? rocket.chuteCd : rocket.dragCoefficient;
+    // Ejection charge fires once at burnout + delay, only after the rocket has
+    // left the pad (may be before or after apogee). A pad-stuck rocket never ejects.
+    if (!this.ejected && s.liftedOff && s.time >= motor.burnTimeS + motor.delayS) {
+      this.ejected = true;
+      applyOutcome(s, this.config, this.rng, 'ejection');
+    }
+
+    const refArea = s.chuteDeployed ? recoveryArea(rocket) : Math.PI * (rocket.diameterM / 2) ** 2;
+    const cd = s.chuteDeployed ? rocket.chuteCd : rocket.dragCoefficient;
 
     const next = stepMotion({
       position: s.position, velocity: s.velocity, mass: s.mass,
@@ -1022,20 +1113,40 @@ export class Simulation {
     s.position = next.position;
     s.velocity = next.velocity;
 
-    s.apogee = Math.max(s.apogee, s.position.y - environment.groundHeight);
+    // Pad support: before liftoff the pad holds the rocket up during the thrust ramp.
+    if (!s.liftedOff) {
+      if (s.position.y > ground) {
+        s.liftedOff = true;
+      } else {
+        s.position = vec(s.position.x, ground, s.position.z);
+        if (s.velocity.y < 0) s.velocity = vec(s.velocity.x, 0, s.velocity.z);
+      }
+    }
+
+    s.apogee = Math.max(s.apogee, s.position.y - ground);
     s.maxSpeed = Math.max(s.maxSpeed, length(s.velocity));
 
     const nextPhase = advancePhase(s, motor);
-    if (nextPhase !== s.phase) {
-      s.phase = nextPhase;
-      if (s.phase === 'apogee') applyOutcome(s, this.config, this.rng, 'apogee');
+    if (nextPhase !== s.phase) s.phase = nextPhase;
+
+    // Landing, only once airborne. Classify hard impacts as crashes.
+    if (s.liftedOff && s.position.y <= ground) {
+      s.impactSpeed = Math.abs(s.velocity.y);
+      s.position = vec(s.position.x, ground, s.position.z);
+      s.velocity = vec(0, 0, 0);
+      const hardLanding = !s.chuteDeployed || s.impactSpeed > HARD_LANDING_MPS;
+      if (s.phase !== 'failed') s.phase = hardLanding ? 'failed' : 'landed';
+      if (s.outcome === null) s.outcome = hardLanding ? 'chute-fail' : 'nominal';
+      return;
     }
 
-    if (s.position.y <= environment.groundHeight) {
-      s.position = vec(s.position.x, environment.groundHeight, s.position.z);
-      s.velocity = vec(0, 0, 0);
-      if (s.phase !== 'failed') s.phase = 'landed';
-      if (s.outcome === null) s.outcome = 'nominal';
+    // Termination safety nets.
+    if (!s.liftedOff && s.time > motor.burnTimeS + motor.delayS + 1) {
+      s.phase = 'failed';           // never left the pad (thrust-to-weight < 1)
+      if (s.outcome === null) s.outcome = 'tip-off';
+    } else if (s.time > MAX_FLIGHT_TIME) {
+      s.phase = s.liftedOff ? 'landed' : 'failed';
+      if (s.outcome === null) s.outcome = s.liftedOff ? 'nominal' : 'tip-off';
     }
   }
 
@@ -1073,19 +1184,21 @@ git commit -m "feat(sim): flight state machine and fixed-step Simulation"
 - Test: `tests/sim/outcomes.test.ts`
 
 **Interfaces:**
-- Consumes: `FlightState`, `SimConfig`, `Outcome`; `Rng`; `vec`, `scale`.
+- Consumes: `FlightState`, `SimConfig`, `Outcome`; `Rng`, `randRange`; `vec`, `length`; `G`.
 - Produces:
-  - `type DecisionPoint = 'ignition' | 'apogee'`
+  - `type DecisionPoint = 'ignition' | 'ejection'`
   - `applyOutcome(state: FlightState, config: SimConfig, rng: Rng, point: DecisionPoint): void`
-    - At `ignition`: compute thrust-to-weight from `motor.avgThrustN / (mass·G)`. If `< 1.2`, chance of `tip-off` (angled velocity kick, continues flight). If `motor.totalImpulseNs > rocket.maxMotorImpulseNs`, high chance of `cato` → sets `phase='failed'`, `outcome='cato'`.
-    - At `apogee`: roll chute deployment. If it deploys, set `chuteDeployed=true`. Else `outcome='chute-fail'` (ballistic; chute stays false). Base chute-fail probability small; higher when `chuteDiameterM === 0`.
-  - `catoProbability(config): number`, `chuteFailProbability(config): number`, `tipOffProbability(config): number` — exported pure helpers for testing.
+    - At `ignition`: compute thrust-to-weight from `motor.avgThrustN / (mass·G)`. If TWR is low or wind is high, chance of `tip-off` — a seeded lateral velocity kick that persists into flight (thrust stays `+y`; the kick plus wind/drag produce an angled, drifting trajectory). If `motor.totalImpulseNs > rocket.maxMotorImpulseNs`, high chance of `cato` → sets `phase='failed'`, `outcome='cato'`.
+    - At `ejection` (fired once by the simulation at `burnTimeS + delayS`): roll chute deployment. If it deploys, set `chuteDeployed=true`. Else leave `chuteDeployed=false` and set `outcome='chute-fail'` (ballistic descent). Base chute-fail probability small; higher when `chuteDiameterM === 0`.
+  - `catoProbability(config): number`, `chuteFailProbability(config): number`, `tipOffProbability(config): number` — exported pure helpers for testing. `tipOffProbability` factors in both TWR and the environment's horizontal wind speed.
+
+Note on ejection timing: because the sim fires `ejection` at `burnout + delayS` (not at apogee), a delay that is too short deploys the chute while the rocket is still ascending — realistic drag penalty and lower apogee. A well-matched delay deploys near apogee.
 
 - [ ] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { applyOutcome, catoProbability, chuteFailProbability } from '../../src/sim/outcomes';
+import { applyOutcome, catoProbability, chuteFailProbability, tipOffProbability } from '../../src/sim/outcomes';
 import { initialFlightState } from '../../src/sim/flight';
 import { mulberry32 } from '../../src/sim/rng';
 import { makeTestConfig } from './fixtures';
@@ -1112,13 +1225,36 @@ describe('outcomes', () => {
     expect(catos).toBeGreaterThan(0);
   });
 
-  it('deploys the chute at apogee in the nominal case', () => {
-    const config = makeTestConfig({ seed: 1 });
-    const s = initialFlightState(config);
-    s.phase = 'apogee';
-    applyOutcome(s, config, mulberry32(1), 'apogee');
-    // With a healthy chute, most seeds deploy; assert no chute-fail set falsely.
-    expect(['nominal', null]).toContain(s.outcome);
+  it('deploys the chute at ejection when the deploy roll succeeds', () => {
+    let deployed = false;
+    for (let seed = 0; seed < 20; seed++) {
+      const config = makeTestConfig({ seed });
+      const s = initialFlightState(config);
+      applyOutcome(s, config, mulberry32(seed), 'ejection');
+      if (s.chuteDeployed) {
+        deployed = true;
+        expect(s.outcome === 'nominal' || s.outcome === null).toBe(true);
+        break;
+      }
+    }
+    expect(deployed).toBe(true); // a healthy chute deploys for most seeds
+  });
+
+  it('sets chute-fail and leaves the chute stowed when the roll fails', () => {
+    // A tumble-recovery rocket (chuteDiameterM 0) fails often; find such a seed.
+    let failed = false;
+    const rocket = { ...makeTestConfig().rocket, chuteDiameterM: 0 };
+    for (let seed = 0; seed < 40; seed++) {
+      const config = makeTestConfig({ seed, rocket });
+      const s = initialFlightState(config);
+      applyOutcome(s, config, mulberry32(seed), 'ejection');
+      if (s.outcome === 'chute-fail') {
+        failed = true;
+        expect(s.chuteDeployed).toBe(false);
+        break;
+      }
+    }
+    expect(failed).toBe(true);
   });
 
   it('tumble-recovery rockets have higher chute-fail probability', () => {
@@ -1127,6 +1263,14 @@ describe('outcomes', () => {
       rocket: { ...makeTestConfig().rocket, chuteDiameterM: 0 },
     });
     expect(chuteFailProbability(tumble)).toBeGreaterThan(chuteFailProbability(withChute));
+  });
+
+  it('high wind raises tip-off probability', () => {
+    const calm = makeTestConfig();
+    const windy = makeTestConfig({
+      environment: { ...makeTestConfig().environment, wind: { base: { x: 12, y: 0, z: 0 }, gust: 4 } },
+    });
+    expect(tipOffProbability(windy)).toBeGreaterThan(tipOffProbability(calm));
   });
 
   it('is deterministic for a fixed seed', () => {
@@ -1148,19 +1292,19 @@ Expected: FAIL (module not found).
 ```ts
 import type { FlightState, SimConfig } from './types';
 import { G } from './integrator';
-import type { Rng } from './rng';
+import { randRange, type Rng } from './rng';
 
-export type DecisionPoint = 'ignition' | 'apogee';
+export type DecisionPoint = 'ignition' | 'ejection';
 
 const BASE_CHUTE_FAIL = 0.04;
 const TUMBLE_CHUTE_FAIL = 0.15;
-const BASE_TIPOFF = 0.05;
+const BASE_TIPOFF = 0.03;
 
 export function catoProbability(config: SimConfig): number {
   const { motor, rocket } = config;
   const overload = motor.totalImpulseNs / rocket.maxMotorImpulseNs;
-  if (overload <= 1) return 0.01; // small baseline
-  return Math.min(0.9, 0.01 + (overload - 1) * 0.8);
+  if (overload <= 1) return 0; // within rated impulse: no CATO (keeps sim deterministic-friendly)
+  return Math.min(0.9, (overload - 1) * 0.8);
 }
 
 export function chuteFailProbability(config: SimConfig): number {
@@ -1168,10 +1312,13 @@ export function chuteFailProbability(config: SimConfig): number {
 }
 
 export function tipOffProbability(config: SimConfig): number {
-  const { motor, rocket } = config;
+  const { motor, rocket, environment } = config;
   const liftoffMass = rocket.massEmptyKg + motor.massTotalKg;
   const twr = motor.avgThrustN / (liftoffMass * G);
-  return twr < 1.2 ? BASE_TIPOFF + (1.2 - twr) * 0.3 : 0;
+  const windSpeed = Math.hypot(environment.wind.base.x, environment.wind.base.z);
+  const twrTerm = twr < 1.5 ? (1.5 - twr) * 0.25 : 0;   // sluggish rockets tip
+  const windTerm = Math.min(0.3, windSpeed * 0.02);      // wind pushes the rail
+  return Math.min(0.6, BASE_TIPOFF + twrTerm + windTerm);
 }
 
 export function applyOutcome(
@@ -1185,17 +1332,19 @@ export function applyOutcome(
     }
     if (rng() < tipOffProbability(config)) {
       state.outcome = 'tip-off';
-      // Angled kick: bleed some vertical energy into horizontal.
-      state.velocity = { x: 2, y: state.velocity.y, z: 1 };
+      // Seeded lateral kick; persists into flight as an angled, drifting path.
+      const angle = randRange(rng, 0, Math.PI * 2);
+      const speed = randRange(rng, 3, 8);
+      state.velocity = { x: Math.cos(angle) * speed, y: state.velocity.y, z: Math.sin(angle) * speed };
     }
     return;
   }
-  // apogee
+  // ejection (fired once at burnout + delay, only after liftoff)
   if (rng() < chuteFailProbability(config)) {
     if (state.outcome === null) state.outcome = 'chute-fail';
     state.chuteDeployed = false;
   } else {
-    state.chuteDeployed = config.rocket.chuteDiameterM > 0;
+    state.chuteDeployed = true; // recovery deployed (chute, or tumble/streamer)
     if (state.outcome === null) state.outcome = 'nominal';
   }
 }
@@ -1342,17 +1491,25 @@ git commit -m "feat(sim): challenge scoring for target-altitude and landing-zone
 import { describe, it, expect } from 'vitest';
 import { motors, motorById } from '../../src/data/motors';
 import { rockets, rocketById, compatibleMotors } from '../../src/data/rockets';
+import type { MotorClass } from '../../src/sim/types';
 
 describe('catalog', () => {
   it('has Estes classes A-E among motors', () => {
     const classes = new Set(motors.map((m) => m.class));
-    for (const c of ['A', 'B', 'C', 'D', 'E']) expect(classes.has(c as any)).toBe(true);
+    const expected: MotorClass[] = ['A', 'B', 'C', 'D', 'E'];
+    for (const c of expected) expect(classes.has(c)).toBe(true);
   });
   it('every motor has positive impulse and burn time', () => {
     for (const m of motors) {
       expect(m.totalImpulseNs).toBeGreaterThan(0);
       expect(m.burnTimeS).toBeGreaterThan(0);
       expect(m.massPropKg).toBeLessThanOrEqual(m.massTotalKg);
+    }
+  });
+  it('avgThrust is consistent with impulse / burn time (within 5%)', () => {
+    for (const m of motors) {
+      const derived = m.totalImpulseNs / m.burnTimeS;
+      expect(Math.abs(derived - m.avgThrustN) / m.avgThrustN, m.id).toBeLessThan(0.05);
     }
   });
   it('has at least 12 rockets with unique ids', () => {
@@ -1387,13 +1544,15 @@ Author Estes-style motors A–E. Values approximate real Estes specs (verify pla
 ```ts
 import type { Motor } from '../sim/types';
 
+// Estes naming: the letter bounds total impulse, the number is average thrust (N).
+// burnTimeS is therefore totalImpulseNs / avgThrustN (a catalog consistency test enforces this).
 export const motors: Motor[] = [
-  { id: 'A8-3',  class: 'A', totalImpulseNs: 2.5,  avgThrustN: 8,   burnTimeS: 0.5,  massTotalKg: 0.0162, massPropKg: 0.0032, delayS: 3 },
-  { id: 'B6-4',  class: 'B', totalImpulseNs: 5.0,  avgThrustN: 6,   burnTimeS: 0.8,  massTotalKg: 0.0189, massPropKg: 0.0062, delayS: 4 },
-  { id: 'C6-5',  class: 'C', totalImpulseNs: 10.0, avgThrustN: 6,   burnTimeS: 1.6,  massTotalKg: 0.0258, massPropKg: 0.0108, delayS: 5 },
-  { id: 'C11-5', class: 'C', totalImpulseNs: 10.0, avgThrustN: 11,  burnTimeS: 0.9,  massTotalKg: 0.0252, massPropKg: 0.0108, delayS: 5 },
-  { id: 'D12-5', class: 'D', totalImpulseNs: 20.0, avgThrustN: 12,  burnTimeS: 1.65, massTotalKg: 0.0428, massPropKg: 0.0211, delayS: 5 },
-  { id: 'E12-6', class: 'E', totalImpulseNs: 30.0, avgThrustN: 12,  burnTimeS: 2.5,  massTotalKg: 0.0570, massPropKg: 0.0353, delayS: 6 },
+  { id: 'A8-3',  class: 'A', totalImpulseNs: 2.5,  avgThrustN: 8,   burnTimeS: 0.313, massTotalKg: 0.0162, massPropKg: 0.0032, delayS: 3 },
+  { id: 'B6-4',  class: 'B', totalImpulseNs: 5.0,  avgThrustN: 6,   burnTimeS: 0.833, massTotalKg: 0.0189, massPropKg: 0.0062, delayS: 4 },
+  { id: 'C6-5',  class: 'C', totalImpulseNs: 10.0, avgThrustN: 6,   burnTimeS: 1.667, massTotalKg: 0.0258, massPropKg: 0.0108, delayS: 5 },
+  { id: 'C11-5', class: 'C', totalImpulseNs: 10.0, avgThrustN: 11,  burnTimeS: 0.909, massTotalKg: 0.0252, massPropKg: 0.0108, delayS: 5 },
+  { id: 'D12-5', class: 'D', totalImpulseNs: 20.0, avgThrustN: 12,  burnTimeS: 1.667, massTotalKg: 0.0428, massPropKg: 0.0211, delayS: 5 },
+  { id: 'E12-6', class: 'E', totalImpulseNs: 30.0, avgThrustN: 12,  burnTimeS: 2.5,   massTotalKg: 0.0570, massPropKg: 0.0353, delayS: 6 },
 ];
 
 export function motorById(id: string): Motor | undefined {
@@ -1931,10 +2090,14 @@ import * as THREE from 'three';
 import type { FlightState } from '../sim/types';
 import { buildFlame, buildParachute } from './rocketMesh';
 
+const EXPLOSION_COUNT = 120;
+
 export class RocketVisual {
   private readonly flame: THREE.Mesh;
   private readonly chute: THREE.Mesh;
   private explosion: THREE.Points | null = null;
+  private explosionVel: Float32Array | null = null;
+  private explosionAge = 0;
   private exploded = false;
 
   constructor(private readonly scene: THREE.Scene, private readonly rocket: THREE.Group) {
@@ -1953,25 +2116,48 @@ export class RocketVisual {
     this.flame.visible = state.phase === 'boost';
     if (this.flame.visible) {
       this.flame.position.y = -1;
-      this.flame.scale.y = 0.7 + Math.random() * 0.6;
+      this.flame.scale.y = 0.7 + Math.random() * 0.6; // cosmetic jitter (world layer)
     }
-    this.chute.visible = state.chuteDeployed && state.phase === 'descent';
+    this.chute.visible = state.chuteDeployed &&
+      (state.phase === 'coast' || state.phase === 'apogee' || state.phase === 'descent');
     if ((state.phase === 'failed' || state.outcome === 'cato') && !this.exploded) {
       this.explode();
     }
+    if (this.explosion) this.animateExplosion();
   }
 
   explode(): void {
     this.exploded = true;
     this.rocket.visible = false;
-    const count = 120;
-    const positions = new Float32Array(count * 3);
+    const positions = new Float32Array(EXPLOSION_COUNT * 3);
+    this.explosionVel = new Float32Array(EXPLOSION_COUNT * 3);
+    for (let i = 0; i < EXPLOSION_COUNT; i++) {
+      const dir = new THREE.Vector3().randomDirection().multiplyScalar(6 + Math.random() * 10);
+      this.explosionVel[i * 3] = dir.x;
+      this.explosionVel[i * 3 + 1] = dir.y;
+      this.explosionVel[i * 3 + 2] = dir.z;
+    }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const mat = new THREE.PointsMaterial({ color: 0xff6600, size: 1.5 });
+    const mat = new THREE.PointsMaterial({ color: 0xff6600, size: 1.5, transparent: true, opacity: 1 });
     this.explosion = new THREE.Points(geo, mat);
     this.explosion.position.copy(this.rocket.position);
     this.scene.add(this.explosion);
+  }
+
+  private animateExplosion(): void {
+    if (!this.explosion || !this.explosionVel) return;
+    this.explosionAge += 1 / 60;
+    const attr = this.explosion.geometry.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < EXPLOSION_COUNT; i++) {
+      attr.setXYZ(i,
+        attr.getX(i) + this.explosionVel[i * 3] / 60,
+        attr.getY(i) + this.explosionVel[i * 3 + 1] / 60,
+        attr.getZ(i) + this.explosionVel[i * 3 + 2] / 60);
+    }
+    attr.needsUpdate = true;
+    const mat = this.explosion.material as THREE.PointsMaterial;
+    mat.opacity = Math.max(0, 1 - this.explosionAge); // fade over ~1 s
   }
 
   dispose(): void {
@@ -1998,7 +2184,7 @@ git commit -m "feat(world): rocket visual with flame, chute, and explosion effec
 - Test: `tests/audio/sfx.test.ts` (logic only: mute state; no real WebAudio in node)
 
 **Interfaces:**
-- Produces: `class Sfx { muted: boolean; constructor(); play(name: 'launch'|'whoosh'|'chute'|'boom'): void; toggleMute(): boolean; }` — synthesizes short tones via the WebAudio API; guards all audio behind a try/catch and a `muted` flag defaulting to `true`. `play` is a no-op when muted or when WebAudio is unavailable (node/tests).
+- Produces: `class Sfx { muted: boolean; constructor(); play(name: 'launch'|'chute'|'boom'): void; toggleMute(): boolean; }` — synthesizes short tones via the WebAudio API; guards all audio behind a try/catch and a `muted` flag defaulting to `true`. `play` is a no-op when muted or when WebAudio is unavailable (node/tests). Only the three sounds actually triggered by the app are defined (launch at ignition, chute at recovery, boom on CATO/crash).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2032,11 +2218,10 @@ Expected: FAIL (module not found).
 - [ ] **Step 3: Write `src/audio/sfx.ts`**
 
 ```ts
-type SfxName = 'launch' | 'whoosh' | 'chute' | 'boom';
+type SfxName = 'launch' | 'chute' | 'boom';
 
 const TONES: Record<SfxName, { freq: number; dur: number; type: OscillatorType }> = {
   launch: { freq: 90, dur: 0.6, type: 'sawtooth' },
-  whoosh: { freq: 300, dur: 0.3, type: 'sine' },
   chute: { freq: 500, dur: 0.15, type: 'triangle' },
   boom: { freq: 60, dur: 0.5, type: 'square' },
 };
@@ -2101,7 +2286,7 @@ git commit -m "feat(audio): lightweight synthesized SFX, muted by default"
 ### Task 16: UI overlay (selectors, HUD, summary, challenge)
 
 **Files:**
-- Create: `src/ui/ui.ts`, `src/ui/ui.css`
+- Create: `src/ui/format.ts`, `src/ui/ui.ts`, `src/ui/ui.css`
 - Test: `tests/ui/format.test.ts` (pure formatting helpers only)
 
 **Interfaces:**
@@ -2109,7 +2294,8 @@ git commit -m "feat(audio): lightweight synthesized SFX, muted by default"
 - Produces:
   - Pure helpers (tested): `formatAltitude(m: number): string`, `formatSpeed(mps: number): string`, `phaseLabel(phase: FlightPhase): string`.
   - `class Ui { constructor(host, handlers: UiHandlers); getSelection(): { rocketId, motorId, envId, challenge }; updateHud(state): void; showSummary(summary): void; hideSummary(): void; setLaunchEnabled(b): void; }` where `interface UiHandlers { onLaunch(): void; onReset(): void; onToggleMute(): boolean; onToggleCamera(): void; onRocketChange(id: string): void; }`.
-  - Builds DOM controls: rocket `<select>`, motor `<select>` (repopulated on rocket change via `compatibleMotors`), environment `<select>`, challenge `<select>` + target altitude input, Launch/Reset/Mute/Camera buttons, a HUD panel, and a summary modal.
+  - Builds DOM controls: rocket `<select>`, motor `<select>` (repopulated on rocket change via `compatibleMotors`), environment `<select>`, challenge `<select>` + target altitude input, an "allow any motor (may explode!)" checkbox, Launch/Reset/Mute/Camera buttons, a HUD panel, and a summary modal.
+  - The "allow any motor" checkbox, when checked, repopulates the motor `<select>` with the full `motors` list instead of `compatibleMotors(rocket)`, letting the player fit an oversized motor and trigger a CATO. `onRocketChange` and the checkbox handler share one `repopulateMotors()` method.
 
 - [ ] **Step 1: Write the failing test for formatters**
 
@@ -2256,6 +2442,8 @@ function launch(): void {
   const mesh = buildRocketMesh(rocket);
   mesh.position.set(0, params.groundHeight, 0);
   visual = new RocketVisual(scene.scene, mesh);
+  accumulator = 0;                  // discard any leftover fractional tick
+  last = performance.now();         // reset timing baseline for this flight
   sfx.play('launch');
   ui.setLaunchEnabled(false);
   ui.hideSummary();
@@ -2289,6 +2477,15 @@ function finish(): void {
   ui.setLaunchEnabled(true);
   sfx.play(summary.outcome === 'cato' ? 'boom' : 'chute');
 }
+
+window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  switch (e.key.toLowerCase()) {
+    case ' ': e.preventDefault(); sim && !sim.done ? reset() : launch(); break;
+    case 'c': cameraMode = cameraMode === 'orbit' ? 'follow' : 'orbit'; scene.setCameraMode(cameraMode); break;
+    case 'm': sfx.toggleMute(); break;
+  }
+});
 
 scene.setCameraMode(cameraMode);
 requestAnimationFrame(frame);
@@ -2333,9 +2530,10 @@ available in this environment) that:
 2. Waits for a `<canvas>` to exist.
 3. Reads console messages; fails if any `error`-level entries appear.
 4. Clicks the Launch button (by id/text).
-5. Polls the HUD altitude element for ~5 s; asserts it rose above 0 then returns toward 0 (a flight happened).
-6. Screenshots to `scratchpad/rkt-smoke.png`.
-7. Exits non-zero on any failure.
+5. Polls the HUD altitude element for up to ~10 s; asserts it rose above 0 (a flight actually happened). Do NOT assert it returns to 0 in a few seconds — chute descent from a few hundred metres at ~3 m/s takes 60-90 s.
+6. Optionally waits up to ~120 s for the summary modal to appear as a stronger end-to-end signal (or ends after confirming ascent).
+7. Screenshots to `scratchpad/rkt-smoke.png`.
+8. Exits non-zero on any failure.
 
 Author the concrete script during implementation using the CDP tooling available.
 Prefer the Playwright MCP browser tools if simpler than raw CDP.
@@ -2428,3 +2626,42 @@ in Task 17. `Outcome`, `FlightPhase`, `EnvParams` defined once in Task 2.
   launches.
 - Fixed `finish()` to read a stored `{ params, challenge }` captured at launch
   instead of recomputing env params from a time value (Task 17).
+
+**External review corrections (glm, codex, qwen — see `reviews/`):**
+- BLOCKER (glm + codex, verified): the rocket started exactly at `groundHeight`
+  and the thrust ramp began below weight, so the unconditional ground clamp fired
+  on tick 1 and every flight "landed" at ignition. Fixed with `liftedOff` + pad
+  support; landing only triggers once airborne (Tasks 2, 6).
+- `delayS` was dead data (chute deployed at apogee, ignoring the ejection delay).
+  Recovery now fires at `burnout + delayS` (decision point renamed
+  `apogee`→`ejection`); a too-short delay deploys during ascent (Tasks 6, 7).
+- Motor catalog was internally inconsistent (`avgThrustN` ≠ impulse/burn). All
+  motors reconciled to the Estes convention; a consistency test enforces it
+  (Task 9).
+- Order/chute tests asserted only Set membership. Rewritten to assert the exact
+  transition order, bounded termination, and real `chuteDeployed`/`nominal`
+  properties via seed search (Task 6).
+- chute-fail/hard impacts could not become `failed` (explosion unreachable). Now
+  classified by impact speed against `HARD_LANDING_MPS` (Task 6).
+- tip-off ignored wind and was a fixed kick. Wind + TWR now feed
+  `tipOffProbability`; the kick is seeded and directional (Tasks 5, 7). NOTE:
+  full thrust-axis vectoring (codex) was deliberately NOT adopted — over-scope
+  for "grounded but approachable"; documented in spec §7.
+- `integrateImpulse` last-interval overshoot fixed with `h = min(dt, burn−t)`;
+  non-divisible-timestep test added (Task 3).
+- Accumulator/timing baseline now reset on launch (Task 17).
+- CDP smoke assertion corrected (assert ascent; do not expect return-to-0 in 5 s;
+  optional ≤120 s wait for the summary) (Task 18).
+- Added an "allow any motor" toggle so CATO is reachable via the UI (Task 16).
+- Baseline CATO for within-rated motors set to 0 (was 0.01) — removes a 1% latent
+  test flake and models CATO as caused by overload/defect (Task 7, qwen).
+- "bigger impulse" test given a higher `maxMotorImpulseNs` so neither variant
+  CATOs (qwen BLOCKER).
+- Ejection gated on `liftedOff` so a pad-stuck rocket can't end `failed` with a
+  `nominal` outcome (qwen).
+- Tumble/streamer rockets (`chuteDiameterM === 0`) now get a real recovery drag
+  area (`TUMBLE_AREA_FACTOR`) so a successful ejection lands them survivably
+  instead of crashing 100% of flights (qwen; Task 6 adds a test).
+- Keyboard shortcuts (Space/C/M) wired in `main.ts` (spec §4.3, qwen; Task 17).
+- Removed unused `whoosh` SFX; fixed `c as any` in the catalog test; early-
+  deployed chute now visible during coast/apogee (qwen; Tasks 15, 9, 14).

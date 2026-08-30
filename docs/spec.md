@@ -115,11 +115,13 @@ Estes motor classes A–E, hand-authored. Each motor record:
 
 ### 6.1 Thrust curve
 
-A parametric piecewise curve generated from `avgThrustN` and `burnTimeS`: a fast
-rise to a peak, a sustain, and a taper to zero. The curve is scaled so that its
-time integral equals `totalImpulseNs` (impulse conservation is a hard invariant,
-enforced by a unit test). This avoids shipping `.eng` files while keeping the
-boost phase physically sensible.
+A parametric piecewise curve over `[0, burnTimeS]`: a fast rise to a peak, a
+sustain, and a taper to zero. The peak is derived so that the curve's time
+integral equals `totalImpulseNs` (impulse conservation is a hard invariant,
+enforced by a unit test). `avgThrustN` is the catalog/display average and, by the
+Estes naming convention, equals `totalImpulseNs / burnTimeS` (a catalog test
+enforces this consistency); it also feeds the tip-off probability. This avoids
+shipping `.eng` files while keeping the boost phase physically sensible.
 
 ## 7. Physics model
 
@@ -129,15 +131,20 @@ timestep integration, decoupled from render frame rate via an accumulator.
 
 Forces each step:
 
-- **Thrust:** from the thrust curve during boost, along the rocket axis.
+- **Thrust:** from the thrust curve during boost, applied vertically (`+y`) — a
+  guide-rail simplification. Instability is modeled as a lateral velocity kick at
+  liftoff (tip-off), not as thrust vectoring.
 - **Gravity:** `m·g`, `g = 9.81 m/s²`.
-- **Drag:** `½·ρ·v²·Cd·A`, opposing velocity. `A` from body diameter during
-  ascent/coast; from parachute (`chuteDiameterM`, `chuteCd`) during recovery.
+- **Drag:** `½·ρ·v²·Cd·A`, opposing air-relative velocity. `A` from body diameter
+  during ascent/coast; from parachute (`chuteDiameterM`, `chuteCd`) once the chute
+  has deployed.
 - **Wind:** a horizontal wind vector (constant + gust component) applied through
   drag, producing lateral drift.
 
 Mass decreases linearly with burned propellant during boost. Air density `ρ`
 from a simple altitude model in `atmosphere.ts` (does not need to be barometric).
+Before liftoff the launch pad supports the rocket (no downward motion) during the
+brief thrust ramp; the rocket can only "land" once it has actually left the pad.
 
 Integration: **semi-implicit (symplectic) Euler** at a fixed `dt` (e.g. 1/120 s).
 Chosen over RK4 for simplicity and stability at this fidelity.
@@ -149,30 +156,40 @@ idle → boost → coast → apogee → descent → landed
                                    ↘ (failure) → failed
 ```
 
-- **idle:** on pad, awaiting launch.
+- **idle:** on pad, awaiting launch. The pad supports the rocket during the
+  initial thrust ramp; the rocket does not "land" before it has lifted off.
 - **boost:** motor burning, thrust > 0.
 - **coast:** burnout to apogee (vertical velocity > 0).
-- **apogee:** vertical velocity crosses zero → trigger recovery (chute deploy
-  after ejection delay).
-- **descent:** falling under parachute (or ballistic if chute failed).
-- **landed:** vertical position returns to ground height.
-- **failed:** a failure outcome ended the flight early.
+- **apogee:** vertical velocity crosses zero.
+- **descent:** falling under parachute (or ballistic if the chute failed).
+- **landed:** rocket returns to ground height with a survivable impact speed.
+- **failed:** a failure outcome (CATO, hard landing/crash, or never leaving the
+  pad) ended the flight.
+
+Recovery is driven by the **ejection charge**, which fires once at
+`burnout + delayS` — this may be slightly before or after apogee. A well-matched
+delay deploys the chute near apogee; too short a delay deploys it while still
+ascending (a realistic drag penalty and lower apogee).
 
 ### 7.2 Outcomes (`outcomes.ts`)
 
 Condition- and probability-driven, using the seeded RNG:
 
-- **nominal:** normal flight and recovery.
+- **nominal:** normal flight and recovery, soft landing.
 - **CATO** (catastrophe at takeoff / motor explosion): raised probability when
-  the chosen motor's impulse exceeds the rocket's `maxMotorImpulse`. Ends flight
+  the chosen motor's impulse exceeds the rocket's `maxMotorImpulseNs`. Ends flight
   early with an explosion effect near the pad/low altitude.
-- **chute-fail:** parachute fails to deploy at apogee → ballistic descent (hard
-  landing). Probability small but non-zero, higher for tumble-recovery rockets.
-- **tip-off:** low thrust-to-weight at launch (or high wind) causes an unstable,
-  angled trajectory off the rail.
+- **chute-fail:** parachute fails to deploy at ejection → ballistic descent and a
+  hard landing (phase `failed`, explosion effect). Probability small but non-zero,
+  higher for tumble-recovery rockets. A soft-recovery flight that nonetheless
+  strikes the ground above the hard-landing speed threshold is also classified as
+  a crash.
+- **tip-off:** low thrust-to-weight at launch or high wind causes an unstable,
+  angled, drifting trajectory (seeded lateral kick at liftoff). Wind speed and
+  TWR both feed the tip-off probability.
 
-Outcome selection happens at defined decision points (ignition, apogee) and is
-fully deterministic given the seed, so it is unit-testable.
+Outcome selection happens at defined decision points (**ignition** and
+**ejection**) and is fully deterministic given the seed, so it is unit-testable.
 
 ## 8. Environments
 
