@@ -46,20 +46,27 @@ const LAUNCH_CLEARANCE = 30;
 
 function launchPad(groundHeight: number): THREE.Mesh {
   const pad = new THREE.Mesh(
-    new THREE.CylinderGeometry(5, 5, 0.4, 20),
+    new THREE.CylinderGeometry(5, 5, 0.5, 20),
     new THREE.MeshLambertMaterial({ color: 0x30343a }),
   );
-  pad.position.set(0, groundHeight - 0.2, 0); // top flush with the ground so the rocket rests on it
+  // Centred on the surface so its top face sits clearly ABOVE the ground disc
+  // (no coplanar faces -> no z-fighting); the bottom half is hidden below ground.
+  pad.position.set(0, groundHeight, 0);
   return pad;
 }
 
-function base(ctx: BuildContext, params: EnvParams, groundColor: number, sky: number, withPad = true): void {
+interface BaseOpts { pad?: boolean; groundY?: number; }
+
+function base(ctx: BuildContext, params: EnvParams, groundColor: number, sky: number, opts: BaseOpts = {}): void {
+  const { pad = true, groundY = params.groundHeight } = opts;
   ctx.scene.background = new THREE.Color(sky);
   addLights(ctx.root);
   const ground = groundDisc(params.bounds.radius, groundColor);
-  ground.position.y = params.groundHeight;
+  // Sit the ground disc a hair below the surface so props/pad resting at
+  // groundHeight never share a plane with it (avoids z-fighting flicker).
+  ground.position.y = groundY - 0.1;
   ctx.root.add(ground);
-  if (withPad) ctx.root.add(launchPad(params.groundHeight));
+  if (pad) ctx.root.add(launchPad(params.groundHeight));
   if (ctx.showTargetZone) markTargetZone(ctx.root, params);
 }
 
@@ -118,18 +125,21 @@ function desert(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 
 function sea(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const g = params.groundHeight;
-  base(ctx, params, 0x2a6f9e, 0xbfe0f5, false); // the raft is the launch platform
+  base(ctx, params, 0x2a6f9e, 0xbfe0f5, { pad: false }); // the raft is the launch platform
   // Launch raft at the origin (top flush with water) so the rocket rests on it.
   ctx.root.add(box(16, 1, 16, 0x8a6d3b, 0, g - 0.5, 0));
   scatter(ctx, params, 8, (x, z) => box(3, 2, 8, 0xdddddd, x, g + 1, z), rng, 60); // distant boats
 }
 
-function rooftop(ctx: BuildContext, params: EnvParams, rng: Rng): void {
+function rooftop(ctx: BuildContext, params: EnvParams, _rng: Rng): void {
   const g = params.groundHeight;
-  base(ctx, params, 0x8a8a8a, 0xa9c0d6);
-  // The house below the rooftop.
-  ctx.root.add(box(60, g, 60, 0xb5651d, 0, g / 2, 0));
-  scatter(ctx, params, 10, (x, z) => box(4, 3, 4, 0x666666, x * 0.3, g + 1.5, z * 0.3), rng); // vents/AC units
+  // Street level is far below; the house roof (top at g) is the launch surface.
+  base(ctx, params, 0x6b6b6b, 0xa9c0d6, { groundY: 0 });
+  ctx.root.add(box(60, g, 60, 0xb5651d, 0, g / 2, 0)); // the house; roof top sits at g
+  // A few rooftop fixtures, kept on the roof (well inside its ±30 footprint).
+  ctx.root.add(box(6, 3, 6, 0x555555, -18, g + 1.5, 14));  // AC unit
+  ctx.root.add(box(4, 4, 4, 0x555555, 15, g + 2, -12));    // vent block
+  ctx.root.add(box(3, 6, 3, 0x777777, 20, g + 3, 18));     // chimney
 }
 
 function bathtub(ctx: BuildContext, params: EnvParams, _rng: Rng): void {

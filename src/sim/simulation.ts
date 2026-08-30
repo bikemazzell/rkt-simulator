@@ -10,7 +10,7 @@ import { applyOutcome } from './outcomes';
 export const DT = 1 / 120;
 const HARD_LANDING_MPS = 15;    // impact speed above which a landing is a crash
 const MAX_FLIGHT_TIME = 600;    // absolute safety terminal (s)
-const TUMBLE_AREA_FACTOR = 8;   // tumbling/streamer recovery presents ~8x body area
+const TUMBLE_AREA_FACTOR = 14;  // tumbling/streamer recovery: enough drag to land under the crash threshold
 
 // Effective recovery drag area once recovery has deployed. A parachute uses the
 // canopy; a chuteless (streamer/tumble) rocket uses an inflated body area so a light
@@ -91,14 +91,20 @@ export class Simulation {
     const nextPhase = advancePhase(s, motor);
     if (nextPhase !== s.phase) s.phase = nextPhase;
 
-    // Landing, only once airborne. Classify hard impacts as crashes.
+    // Landing, only once airborne. Classify hard impacts as crashes, keeping
+    // phase and outcome consistent (a `failed` phase always has a crash outcome,
+    // never a leftover `nominal` from the ejection roll).
     if (s.liftedOff && s.position.y <= ground) {
       s.impactSpeed = Math.abs(s.velocity.y);
       s.position = vec(s.position.x, ground, s.position.z);
       s.velocity = vec(0, 0, 0);
       const hardLanding = !s.chuteDeployed || s.impactSpeed > HARD_LANDING_MPS;
-      if (s.phase !== 'failed') s.phase = hardLanding ? 'failed' : 'landed';
-      if (s.outcome === null) s.outcome = hardLanding ? 'chute-fail' : 'nominal';
+      s.phase = hardLanding ? 'failed' : 'landed';
+      if (hardLanding) {
+        if (s.outcome !== 'cato') s.outcome = 'chute-fail'; // crash landing
+      } else if (s.outcome === null) {
+        s.outcome = 'nominal';
+      }
       return;
     }
 

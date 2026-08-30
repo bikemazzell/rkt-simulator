@@ -85,8 +85,13 @@ export class Ui {
     });
     this.speedBtn.addEventListener('click', () => this.setSpeedLabel(this.handlers.onCycleSpeed()));
 
-    panel.append(
-      el('h1', 'rkt-title', 'RKT Simulator'),
+    const collapseBtn = el('button', 'rkt-collapse', '▾'); // ▾
+    collapseBtn.setAttribute('aria-label', 'Collapse controls');
+    const header = el('div', 'rkt-header');
+    header.append(el('h1', 'rkt-title', 'RKT Simulator'), collapseBtn);
+
+    const body = el('div', 'rkt-body');
+    body.append(
       this.field('Rocket', this.rocketSel),
       this.field('Motor', this.motorSel),
       anyLabel,
@@ -98,6 +103,12 @@ export class Ui {
       this.buttonRow(muteBtn),
       el('p', 'rkt-hint', 'Space: launch/reset · C: camera · F: speed · M: mute · WASD move · QE up/down'),
     );
+    collapseBtn.addEventListener('click', () => {
+      body.hidden = !body.hidden;
+      collapseBtn.textContent = body.hidden ? '▸' : '▾'; // ▸ / ▾
+    });
+
+    panel.append(header, body);
 
     this.summary.hidden = true;
     host.append(panel, this.hud, this.summary);
