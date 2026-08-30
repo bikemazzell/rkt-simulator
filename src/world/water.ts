@@ -85,7 +85,7 @@ export class WaterSystem implements WorldSystem {
         if (dx * dx + dz * dz > spec.radius * spec.radius) continue;
         const v = quad * 4;
         positions.push(wx, spec.y, wz, wx + tile, spec.y, wz, wx, spec.y, wz + tile, wx + tile, spec.y, wz + tile);
-        indices.push(v, v + 2, v + 1, v, v + 3, v + 2); // up-facing winding
+        indices.push(v, v + 2, v + 1, v + 1, v + 2, v + 3); // up-facing winding for this vertex layout
         this.writeQuad(colors, v, palette, shimmerIndex(ix, iz, 0));
         quad++;
       }

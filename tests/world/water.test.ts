@@ -54,6 +54,20 @@ describe('buildWater', () => {
     expect(quads).toBeLessThanOrEqual(64 * 64);
   });
 
+  it('computes up-facing normals for every vertex so lit water is visible from above', () => {
+    const root = new THREE.Group();
+    const rng = mulberry32(7);
+    buildWater(root, rng, [{ radius: 25, y: 0.02 }]);
+    const mesh = root.children.find((c) => c instanceof THREE.Mesh) as THREE.Mesh;
+    const normals = (mesh.geometry as THREE.BufferGeometry).getAttribute('normal') as THREE.BufferAttribute;
+    expect(normals.count).toBeGreaterThan(0);
+    for (let i = 0; i < normals.count; i++) {
+      expect(normals.getY(i)).toBeGreaterThan(0.99);
+      expect(Math.abs(normals.getX(i))).toBeLessThan(0.01);
+      expect(Math.abs(normals.getZ(i))).toBeLessThan(0.01);
+    }
+  });
+
   it('caps huge water bodies to the 64x64 grid budget', () => {
     const root = new THREE.Group();
     const rng = mulberry32(7);
