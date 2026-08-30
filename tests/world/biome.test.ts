@@ -63,3 +63,22 @@ describe('biome', () => {
     }
   });
 });
+
+describe('biome terrain styles', () => {
+  it('every biome carries a usable terrain style', () => {
+    for (const id of ALL_IDS) {
+      const t = biomeFor(id).terrain;
+      expect(t.amplitude).toBeGreaterThanOrEqual(0);
+      expect(t.step).toBeGreaterThan(0);
+      expect(t.feature).toBeGreaterThan(0);
+      if (t.amplitude > 0) expect(t.step).toBeLessThanOrEqual(t.amplitude);
+    }
+  });
+
+  it('water worlds stay flat while land biomes roll', () => {
+    expect(biomeFor('sea').terrain.amplitude).toBe(0);
+    expect(biomeFor('bathtub').terrain.amplitude).toBe(0);
+    expect(biomeFor('park').terrain.amplitude).toBeGreaterThan(0);
+    expect(biomeFor('mountain').terrain.amplitude).toBeGreaterThan(0);
+  });
+});

@@ -82,3 +82,24 @@ describe('CreatureSystem', () => {
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.2);
   });
 });
+
+describe('CreatureSystem on terrain', () => {
+  it('walkers climb the terrain as they wander', () => {
+    const root = new THREE.Group();
+    const biome = biomeFor('park');
+    const heightAt = (x: number, z: number): number => Math.round((x + z) / 20) * 4;
+    const sys = new CreatureSystem(root, biome, mulberry32(77), {
+      groundY: 0, minR: 30, maxR: 250, heightAt,
+    });
+    const walkers = root.children.filter((c) => c.userData && c.userData.limbs);
+    expect(walkers.length).toBe(biome.creatures.villagers + biome.creatures.animals);
+    for (const w of walkers) {
+      expect(w.position.y).toBe(heightAt(w.position.x, w.position.z));
+    }
+    // After walking for a while they must still be glued to the ground.
+    for (let i = 0; i < 240; i++) sys.update(1 / 30, i / 30);
+    for (const w of walkers) {
+      expect(w.position.y).toBe(heightAt(w.position.x, w.position.z));
+    }
+  });
+});

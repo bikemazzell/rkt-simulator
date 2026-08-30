@@ -34,14 +34,14 @@ export class CloudSystem implements WorldSystem {
   private readonly root: THREE.Group;
   private readonly mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
 
-  constructor(root: THREE.Group, rng: Rng, windXZ: { x: number; z: number }) {
+  constructor(root: THREE.Group, rng: Rng, windXZ: { x: number; z: number }, yBase = 0) {
     this.root = root;
     const count = Math.min(CLOUD_CAP, 12 + Math.floor(rng() * 7));
     for (let i = 0; i < count; i++) {
       const cloud = makeCloud(rng, this.mat);
       const a = rng() * Math.PI * 2;
       const r = randRange(rng, 150, 1200);
-      cloud.position.set(Math.cos(a) * r, randRange(rng, 160, 240), Math.sin(a) * r);
+      cloud.position.set(Math.cos(a) * r, yBase + randRange(rng, 160, 240), Math.sin(a) * r);
       root.add(cloud);
       this.clouds.push(cloud);
     }

@@ -15,6 +15,8 @@ export interface CreatureOpts {
   groundY: number;
   minR: number;
   maxR: number;
+  /** terrain sampler; walkers climb the stepped ground when provided */
+  heightAt?: (x: number, z: number) => number;
 }
 
 interface Walker {
@@ -156,6 +158,7 @@ export class CreatureSystem implements WorldSystem {
   private readonly walkers: Walker[] = [];
   private readonly birds: Bird[] = [];
   private readonly bobs: HeadBob[] = [];
+  private heightAt: ((x: number, z: number) => number) | null = null;
 
   constructor(root?: THREE.Group, biome?: Biome, rng?: Rng, opts?: CreatureOpts) {
     if (root && biome && rng && opts) this.populate(root, biome, rng, opts);
@@ -168,6 +171,8 @@ export class CreatureSystem implements WorldSystem {
 
   private populate(root: THREE.Group, biome: Biome, rng: Rng, opts: CreatureOpts): void {
     const { groundY, minR, maxR } = opts;
+    this.heightAt = opts.heightAt ?? null;
+    const ground = (x: number, z: number): number => (this.heightAt ? this.heightAt(x, z) : groundY);
     const c = biome.creatures;
     const villagers = Math.min(c.villagers, GROUND_CAP);
     const animals = Math.min(c.animals, GROUND_CAP - villagers);
@@ -177,7 +182,7 @@ export class CreatureSystem implements WorldSystem {
     const spawns = scatterPositions(rng, villagers + animals, { minR, maxR });
     for (let i = 0; i < villagers; i++) {
       const group = makeVillager(rng, mats);
-      group.position.set(spawns[i].x, groundY, spawns[i].z);
+      group.position.set(spawns[i].x, ground(spawns[i].x, spawns[i].z), spawns[i].z);
       root.add(group);
       this.walkers.push({
         group,
@@ -192,7 +197,7 @@ export class CreatureSystem implements WorldSystem {
       const kind = ANIMAL_KINDS[Math.floor(rng() * ANIMAL_KINDS.length)];
       const group = makeAnimal(rng, kind, mats);
       const spawn = spawns[villagers + i];
-      group.position.set(spawn.x, groundY, spawn.z);
+      group.position.set(spawn.x, ground(spawn.x, spawn.z), spawn.z);
       root.add(group);
       this.walkers.push({
         group,
@@ -207,7 +212,7 @@ export class CreatureSystem implements WorldSystem {
     for (const center of scatterPositions(rng, birdCount, { minR: minR * 0.5, maxR: maxR * 0.7 })) {
       const { group, wingL, wingR } = makeBird(rng, birdMat);
       const radius = randRange(rng, 15, 50);
-      group.position.set(center.x, groundY + randRange(rng, 25, 60), center.z);
+      group.position.set(center.x, ground(center.x, center.z) + randRange(rng, 25, 60), center.z);
       root.add(group);
       this.birds.push({
         group,
@@ -235,6 +240,7 @@ export class CreatureSystem implements WorldSystem {
       const step = Math.min(dist, w.speed * dt);
       w.group.position.x += (dx / dist) * step;
       w.group.position.z += (dz / dist) * step;
+      if (this.heightAt) w.group.position.y = this.heightAt(w.group.position.x, w.group.position.z);
       const desired = Math.atan2(dx, dz);
       let diff = desired - w.group.rotation.y;
       while (diff > Math.PI) diff -= Math.PI * 2;

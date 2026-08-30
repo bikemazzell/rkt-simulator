@@ -61,3 +61,26 @@ describe('buildVegetation', () => {
     expect(sway.update(0, 0)).toBeUndefined();
   });
 });
+
+describe('buildVegetation on terrain', () => {
+  it('plants sit on the sampled terrain height', () => {
+    const root = new THREE.Group();
+    const biome = biomeFor('park');
+    const heightAt = (x: number, z: number): number => Math.round((x + z) / 20) * 4;
+    buildVegetation(root, biome, mulberry32(33), { groundY: 0, minR: 30, maxR: 250, heightAt });
+    const plants = root.children.filter((c) => !(c instanceof THREE.InstancedMesh));
+    expect(plants.length).toBeGreaterThan(0);
+    for (const p of plants) {
+      expect(p.position.y).toBe(heightAt(p.position.x, p.position.z));
+    }
+    // Grass instances follow the terrain too.
+    const grass = root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const a = grass.instanceMatrix.array as Float32Array;
+    for (let i = 0; i < grass.count; i += 37) {
+      const x = a[i * 16 + 12];
+      const y = a[i * 16 + 13];
+      const z = a[i * 16 + 14];
+      expect(y).toBeCloseTo(heightAt(x, z) + 0.45, 5);
+    }
+  });
+});

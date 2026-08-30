@@ -28,6 +28,16 @@ export interface WeatherWeights {
 
 export type WaterKind = 'none' | 'pond' | 'sea' | 'tub';
 
+/** Terrain shaping: amplitude 0 keeps the environment perfectly flat. */
+export interface TerrainStyle {
+  /** total climb in meters above the ground plane */
+  amplitude: number;
+  /** quantization in meters (terrace height) */
+  step: number;
+  /** dominant hill wavelength in meters */
+  feature: number;
+}
+
 export interface Biome {
   envId: string;
   groundPalette: number[];
@@ -35,6 +45,7 @@ export interface Biome {
   creatures: CreatureMix;
   weather: WeatherWeights;
   water: WaterKind;
+  terrain: TerrainStyle;
 }
 
 export const BIOME_ENV_IDS = [
@@ -49,6 +60,7 @@ const BIOMES: Record<string, Biome> = {
     creatures: { villagers: 8, animals: 8, birds: 12 },
     weather: { clear: 0.7, rain: 0.2, storm: 0.1, snow: 0 },
     water: 'pond',
+    terrain: { amplitude: 10, step: 3, feature: 90 }, // rolling meadow terraces
   },
   urban: {
     envId: 'urban',
@@ -57,6 +69,7 @@ const BIOMES: Record<string, Biome> = {
     creatures: { villagers: 6, animals: 0, birds: 8 },
     weather: { clear: 0.65, rain: 0.2, storm: 0.15, snow: 0 },
     water: 'none',
+    terrain: { amplitude: 6, step: 3, feature: 70 }, // gentle street rolls
   },
   mountain: {
     envId: 'mountain',
@@ -65,6 +78,7 @@ const BIOMES: Record<string, Biome> = {
     creatures: { villagers: 2, animals: 6, birds: 10 },
     weather: { clear: 0.5, rain: 0.1, storm: 0.05, snow: 0.35 },
     water: 'pond',
+    terrain: { amplitude: 36, step: 6, feature: 130 }, // rugged highlands
   },
   desert: {
     envId: 'desert',
@@ -73,6 +87,7 @@ const BIOMES: Record<string, Biome> = {
     creatures: { villagers: 1, animals: 2, birds: 4 },
     weather: { clear: 0.92, rain: 0.08, storm: 0, snow: 0 },
     water: 'none',
+    terrain: { amplitude: 10, step: 3, feature: 110 }, // slow dunes
   },
   sea: {
     envId: 'sea',
@@ -81,6 +96,7 @@ const BIOMES: Record<string, Biome> = {
     creatures: { villagers: 0, animals: 0, birds: 10 },
     weather: { clear: 0.6, rain: 0.15, storm: 0.25, snow: 0 },
     water: 'sea',
+    terrain: { amplitude: 0, step: 1, feature: 1 }, // open ocean stays flat
   },
   rooftop: {
     envId: 'rooftop',
@@ -89,6 +105,7 @@ const BIOMES: Record<string, Biome> = {
     creatures: { villagers: 4, animals: 0, birds: 4, groundY: 0 },
     weather: { clear: 0.7, rain: 0.15, storm: 0.15, snow: 0 },
     water: 'none',
+    terrain: { amplitude: 10, step: 4, feature: 80 }, // street-level bumps
   },
   bathtub: {
     envId: 'bathtub',
@@ -97,6 +114,7 @@ const BIOMES: Record<string, Biome> = {
     creatures: { villagers: 0, animals: 0, birds: 3 },
     weather: { clear: 0.95, rain: 0.05, storm: 0, snow: 0 },
     water: 'tub',
+    terrain: { amplitude: 0, step: 1, feature: 1 }, // porcelain stays flat
   },
   'backyard-dog': {
     envId: 'backyard-dog',
@@ -105,6 +123,7 @@ const BIOMES: Record<string, Biome> = {
     creatures: { villagers: 4, animals: 6, birds: 6 },
     weather: { clear: 0.75, rain: 0.15, storm: 0.1, snow: 0 },
     water: 'pond',
+    terrain: { amplitude: 4, step: 2, feature: 60 }, // lawn undulations
   },
 };
 

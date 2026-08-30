@@ -16,6 +16,7 @@ import { scatterPositions } from '../placement';
 import { pickWeather, type WeatherKind } from '../weather';
 import { WeatherSystem } from '../weatherFx';
 import type { Biome } from '../biome';
+import { makeHeightAt, withEdgeFade, type FlattenDisc, type HeightAt } from '../heightmap';
 
 function groundDisc(radius: number, color: number): THREE.Mesh {
   const geo = new THREE.CircleGeometry(radius, 48);
@@ -61,9 +62,47 @@ function launchPad(groundHeight: number): THREE.Mesh {
   return pad;
 }
 
-interface BaseOpts { pad?: boolean; groundY?: number; flat?: boolean; }
+interface BaseOpts { pad?: boolean; groundY?: number; flat?: boolean; flatten?: FlattenDisc[]; padClearR?: number; }
 
-function base(ctx: BuildContext, params: EnvParams, rng: Rng, biome: Biome, opts: BaseOpts = {}): void {
+// Build the terrain sampler for this environment: seeded blocky terraces
+// with forced-flat clearance discs (pad, target zone, water basins) and an
+// edge fade so the field blends into the flat base disc without a cliff.
+// Queries snap to tile centres so every object sits exactly on the rendered
+// surface — never floating over or sunk into a neighbouring step.
+const TILE_SIZE = 5;
+
+function snapToTiles(inner: HeightAt): HeightAt {
+  return (x: number, z: number) =>
+    inner(Math.floor(x / TILE_SIZE) * TILE_SIZE + TILE_SIZE / 2, Math.floor(z / TILE_SIZE) * TILE_SIZE + TILE_SIZE / 2);
+}
+
+function buildTerrain(params: EnvParams, rng: Rng, biome: Biome, groundY: number, extraFlat: FlattenDisc[], padClearR: number): HeightAt {
+  if (biome.terrain.amplitude <= 0) return () => groundY;
+  const flatten: FlattenDisc[] = [
+    { x: 0, z: 0, r: padClearR, y: groundY }, // launch pad clearance
+  ];
+  const tz = params.targetZone;
+  if (tz) flatten.push({ x: tz.center.x, z: tz.center.z, r: tz.radius + 12, y: groundY });
+  flatten.push(...extraFlat);
+  const tiledRadius = Math.min(250, params.bounds.radius);
+  return snapToTiles(
+    withEdgeFade(
+      makeHeightAt({
+        seed: randInt(rng, 1, 2 ** 31 - 1),
+        baseY: groundY,
+        amplitude: biome.terrain.amplitude,
+        step: biome.terrain.step,
+        feature: biome.terrain.feature,
+        flatten,
+      }),
+      groundY,
+      tiledRadius * 0.7,
+      tiledRadius,
+    ),
+  );
+}
+
+function base(ctx: BuildContext, params: EnvParams, rng: Rng, biome: Biome, opts: BaseOpts = {}): HeightAt {
   const { pad = true, groundY = params.groundHeight, flat = false } = opts;
   const palette = biome.groundPalette;
   // Ambient presentation (day/night lights, background, fog) is owned by the
@@ -72,17 +111,19 @@ function base(ctx: BuildContext, params: EnvParams, rng: Rng, biome: Biome, opts
   const startPhase = ctx.startPhase ?? DEFAULT_START_PHASE;
   ctx.registerSystem(new AmbientSystem(ctx.scene, ctx.root, startPhase));
   ctx.registerSystem(new SkySystem(ctx.root, startPhase, randInt(rng, 1, 2 ** 31 - 1)));
-  ctx.registerSystem(new CloudSystem(ctx.root, rng, { x: params.wind.base.x, z: params.wind.base.z }));
+  ctx.registerSystem(new CloudSystem(ctx.root, rng, { x: params.wind.base.x, z: params.wind.base.z }, groundY));
   // Weather: forced via ?weather= for CDP shots, otherwise rolled from the
   // biome weights with the scene seed. Registered after AmbientSystem so the
-  // fog it tightens already exists.
+  // fog it tightens already exists. The particle band starts above the
+  // terrain's mid-slope so rain reaches the terraces.
   const weatherKind: WeatherKind = ctx.weather ?? pickWeather(biome.weather, rng);
   if (weatherKind !== 'clear') {
     ctx.registerSystem(new WeatherSystem(ctx.root, ctx.scene, weatherKind, rng, {
-      groundY: opts.groundY ?? params.groundHeight,
+      groundY: (opts.groundY ?? params.groundHeight) + biome.terrain.amplitude / 2,
       wind: { x: params.wind.base.x, z: params.wind.base.z },
     }));
   }
+  const heightAt = flat ? () => groundY : buildTerrain(params, rng, biome, groundY, opts.flatten ?? [], opts.padClearR ?? 34);
   if (flat) {
     // e.g. sea: open water covers the ground later; keep the simple disc
     const ground = groundDisc(params.bounds.radius, palette[0]);
@@ -93,18 +134,21 @@ function base(ctx: BuildContext, params: EnvParams, rng: Rng, biome: Biome, opts
     buildTiledGround(ctx.root, palette, tileSeed, {
       groundY,
       tiledRadius: Math.min(250, params.bounds.radius),
+      heightAt,
     });
   }
   if (pad) ctx.root.add(launchPad(params.groundHeight));
   if (ctx.showTargetZone) markTargetZone(ctx.root, params);
+  return heightAt;
 }
 
 /** Scatter the biome's flora and register its wind-sway system. */
-function flora(ctx: BuildContext, params: EnvParams, rng: Rng, biome: ReturnType<typeof biomeFor>, opts: { groundY?: number; minR?: number; maxR?: number } = {}): void {
+function flora(ctx: BuildContext, params: EnvParams, rng: Rng, biome: ReturnType<typeof biomeFor>, opts: { groundY?: number; minR?: number; maxR?: number; heightAt?: HeightAt } = {}): void {
   const sway = buildVegetation(ctx.root, biome, rng, {
     groundY: opts.groundY ?? params.groundHeight,
     minR: opts.minR ?? LAUNCH_CLEARANCE,
     maxR: opts.maxR ?? params.bounds.radius * 0.9,
+    heightAt: opts.heightAt,
   });
   if (sway) ctx.registerSystem(sway);
 }
@@ -120,11 +164,12 @@ function scatter(ctx: BuildContext, params: EnvParams, count: number, make: (x: 
 }
 
 /** Scatter the biome's creatures and register their animation system. */
-function critters(ctx: BuildContext, params: EnvParams, rng: Rng, biome: ReturnType<typeof biomeFor>, opts: { groundY?: number; minR?: number; maxR?: number } = {}): CreatureSystem | null {
+function critters(ctx: BuildContext, params: EnvParams, rng: Rng, biome: ReturnType<typeof biomeFor>, opts: { groundY?: number; minR?: number; maxR?: number; heightAt?: HeightAt } = {}): CreatureSystem | null {
   const sys = new CreatureSystem(ctx.root, biome, rng, {
     groundY: opts.groundY ?? biome.creatures.groundY ?? params.groundHeight,
     minR: opts.minR ?? LAUNCH_CLEARANCE,
     maxR: opts.maxR ?? params.bounds.radius * 0.9,
+    heightAt: opts.heightAt,
   });
   ctx.registerSystem(sys);
   return sys;
@@ -143,47 +188,51 @@ function pondSpot(rng: Rng, minR: number, maxR: number): { x: number; z: number 
 
 function park(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('park');
-  base(ctx, params, rng, biome);
-  flora(ctx, params, rng, biome); // oaks + birches, shrubs, flowers, grass
-  critters(ctx, params, rng, biome);
+  const g = params.groundHeight;
   const spot = pondSpot(rng, 90, params.bounds.radius * 0.55); // pond away from the pad
-  water(ctx, rng, [{ radius: 32, x: spot.x, z: spot.z, y: params.groundHeight + 0.02 }]);
+  const heightAt = base(ctx, params, rng, biome, {
+    flatten: [{ x: spot.x, z: spot.z, r: 42, y: g }], // flat pond basin
+  });
+  flora(ctx, params, rng, biome, { heightAt }); // oaks + birches, shrubs, flowers, grass
+  critters(ctx, params, rng, biome, { heightAt });
+  water(ctx, rng, [{ radius: 32, x: spot.x, z: spot.z, y: g + 0.02 }]);
 }
 
 function urban(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('urban');
-  base(ctx, params, rng, biome);
-  const g = params.groundHeight;
+  const heightAt = base(ctx, params, rng, biome);
   scatter(ctx, params, 60, (x, z) => {
     const h = randRange(rng, 15, 90);
     const w = randRange(rng, 8, 20);
     const shade = 0x445566 + randInt(rng, 0, 0x334455);
-    return box(w, h, w, shade, x, g + h / 2, z);
+    return box(w, h, w, shade, x, heightAt(x, z) + h / 2, z);
   }, rng);
-  flora(ctx, params, rng, biome); // street trees in the gaps
-  critters(ctx, params, rng, biome); // pedestrians + pigeons
+  flora(ctx, params, rng, biome, { heightAt }); // street trees in the gaps
+  critters(ctx, params, rng, biome, { heightAt }); // pedestrians + pigeons
 }
 
 function mountain(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('mountain');
-  base(ctx, params, rng, biome);
   const g = params.groundHeight;
+  const lake = pondSpot(rng, 160, params.bounds.radius * 0.5); // alpine lake
+  const heightAt = base(ctx, params, rng, biome, {
+    flatten: [{ x: lake.x, z: lake.z, r: 75, y: g }], // flat lake basin
+  });
   // Big footprints: push peaks well out so their bases never cover the pad.
   scatter(ctx, params, 30, (x, z) => {
     const h = randRange(rng, 60, 200);
-    return cone(h * 0.45, h, 0x7a6f5a, x, g + h / 2, z);
+    return cone(h * 0.45, h, 0x7a6f5a, x, heightAt(x, z) + h / 2, z);
   }, rng, 200);
-  flora(ctx, params, rng, biome); // pines on the lower slopes
-  critters(ctx, params, rng, biome); // mountain goats + hawks
-  const lake = pondSpot(rng, 160, params.bounds.radius * 0.5); // alpine lake
+  flora(ctx, params, rng, biome, { heightAt }); // pines on the slopes
+  critters(ctx, params, rng, biome, { heightAt }); // mountain goats + hawks
   water(ctx, rng, [{ radius: 65, x: lake.x, z: lake.z, y: g + 0.02 }]);
 }
 
 function desert(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('desert');
-  base(ctx, params, rng, biome);
-  flora(ctx, params, rng, biome); // cacti + dry shrubs
-  critters(ctx, params, rng, biome); // villager + critters + vultures
+  const heightAt = base(ctx, params, rng, biome);
+  flora(ctx, params, rng, biome, { heightAt }); // cacti + dry shrubs
+  critters(ctx, params, rng, biome, { heightAt }); // villager + critters + vultures
 }
 
 function sea(ctx: BuildContext, params: EnvParams, rng: Rng): void {
@@ -206,14 +255,15 @@ function rooftop(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('rooftop');
   const g = params.groundHeight;
   // Street level is far below; the house roof (top at g) is the launch surface.
-  base(ctx, params, rng, biome, { groundY: 0 });
+  // Keep the whole house footprint (corners at ~42m) inside the flat core.
+  const heightAt = base(ctx, params, rng, biome, { groundY: 0, flatten: [{ x: 0, z: 0, r: 88, y: 0 }] });
   ctx.root.add(box(60, g, 60, 0xb5651d, 0, g / 2, 0)); // the house; roof top sits at g
   // A few rooftop fixtures, kept on the roof (well inside its ±30 footprint).
   ctx.root.add(box(6, 3, 6, 0x555555, -18, g + 1.5, 14));  // AC unit
   ctx.root.add(box(4, 4, 4, 0x555555, 15, g + 2, -12));    // vent block
   ctx.root.add(box(3, 6, 3, 0x777777, 20, g + 3, 18));     // chimney
   flora(ctx, params, rng, biome, { groundY: g, minR: 8, maxR: 24 }); // planter hedges + tufts
-  critters(ctx, params, rng, biome, { minR: 45 }); // street level, clear of the house
+  critters(ctx, params, rng, biome, { minR: 45, heightAt }); // street level, clear of the house
 }
 
 function bathtub(ctx: BuildContext, params: EnvParams, rng: Rng): void {
@@ -245,18 +295,22 @@ function bathtub(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 function backyardDog(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('backyard-dog');
   const g = params.groundHeight;
-  base(ctx, params, rng, biome);
-  // Fence ring.
+  const birdbath = pondSpot(rng, 35, params.bounds.radius - 25); // small pond away from the pad
+  const heightAt = base(ctx, params, rng, biome, {
+    flatten: [{ x: birdbath.x, z: birdbath.z, r: 19, y: g }],
+  });
+  // Fence ring, posts following the terrain.
   const posts = 24;
   for (let i = 0; i < posts; i++) {
     const a = (i / posts) * Math.PI * 2;
-    ctx.root.add(box(1, 6, 1, 0x8b5a2b, Math.cos(a) * (params.bounds.radius - 5), g + 3, Math.sin(a) * (params.bounds.radius - 5)));
+    const px = Math.cos(a) * (params.bounds.radius - 5);
+    const pz = Math.sin(a) * (params.bounds.radius - 5);
+    ctx.root.add(box(1, 6, 1, 0x8b5a2b, px, heightAt(px, pz) + 3, pz));
   }
-  flora(ctx, params, rng, biome, { maxR: params.bounds.radius - 15 }); // hedges, flowers, grass
-  const birdbath = pondSpot(rng, 35, params.bounds.radius - 25); // small pond away from the pad
+  flora(ctx, params, rng, biome, { maxR: params.bounds.radius - 15, heightAt }); // hedges, flowers, grass
   water(ctx, rng, [{ radius: 9, x: birdbath.x, z: birdbath.z, y: g + 0.02 }]);
-  const creatureSys = critters(ctx, params, rng, biome);
-  // An angry dog near the landing zone, head bobbing as it growls.
+  const creatureSys = critters(ctx, params, rng, biome, { heightAt });
+  // An angry dog near the landing zone (flattened disc), head bobbing as it growls.
   const dog = new THREE.Group();
   dog.add(box(6, 3, 3, 0x7a4a1e, 0, g + 2.5, 0));   // body
   const dogHead = box(3, 3, 3, 0x7a4a1e, 4, g + 3.5, 0); // head

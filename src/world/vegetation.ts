@@ -170,7 +170,15 @@ function treeKindFor(envId: string, rng: Rng): (mats: FloraMats) => THREE.Group 
 
 const GRASS_CAP = 2000;
 
-function buildGrass(root: THREE.Group, rng: Rng, count: number, groundY: number, minR: number, maxR: number): void {
+function buildGrass(
+  root: THREE.Group,
+  rng: Rng,
+  count: number,
+  groundY: number,
+  minR: number,
+  maxR: number,
+  heightAt?: (x: number, z: number) => number,
+): void {
   const n = Math.min(count, GRASS_CAP);
   if (n <= 0) return;
   const geo = new THREE.BoxGeometry(0.22, 0.9, 0.22);
@@ -184,7 +192,8 @@ function buildGrass(root: THREE.Group, rng: Rng, count: number, groundY: number,
   const spots = scatterPositions(rng, n, { minR, maxR });
   for (let i = 0; i < n; i++) {
     const p = spots[i];
-    pos.set(p.x, groundY + 0.45, p.z);
+    const y = heightAt ? heightAt(p.x, p.z) : groundY;
+    pos.set(p.x, y + 0.45, p.z);
     q.setFromAxisAngle(new THREE.Vector3(1, 0, 0.3).normalize(), randRange(rng, -0.15, 0.15));
     scl.set(1, randRange(rng, 0.6, 1.4), 1);
     m.compose(pos, q, scl);
@@ -201,11 +210,14 @@ export interface VegetationOpts {
   groundY: number;
   minR: number;
   maxR: number;
+  /** terrain sampler; plants sit on the stepped ground when provided */
+  heightAt?: (x: number, z: number) => number;
 }
 
 /** Scatter the biome's flora; returns the sway system (or null when empty). */
 export function buildVegetation(root: THREE.Group, biome: Biome, rng: Rng, opts: VegetationOpts): VegetationSystem | null {
-  const { groundY, minR, maxR } = opts;
+  const { groundY, minR, maxR, heightAt } = opts;
+  const ground = (x: number, z: number): number => (heightAt ? heightAt(x, z) : groundY);
   const flora = biome.flora;
   const mats = makeMats();
   const sway = new VegetationSystem();
@@ -214,7 +226,7 @@ export function buildVegetation(root: THREE.Group, biome: Biome, rng: Rng, opts:
   const makeTree = treeKindFor(biome.envId, rng);
   for (const p of scatterPositions(rng, flora.trees, { minR, maxR })) {
     const tree = makeTree(mats);
-    tree.position.set(p.x, groundY, p.z);
+    tree.position.set(p.x, ground(p.x, p.z), p.z);
     tree.rotation.y = rng() * Math.PI * 2;
     root.add(tree);
     sway.addSway(tree, randRange(rng, 0.02, 0.045));
@@ -222,18 +234,18 @@ export function buildVegetation(root: THREE.Group, biome: Biome, rng: Rng, opts:
   }
   for (const p of scatterPositions(rng, flora.shrubs, { minR, maxR })) {
     const shrub = makeShrub(rng, mats);
-    shrub.position.set(p.x, groundY, p.z);
+    shrub.position.set(p.x, ground(p.x, p.z), p.z);
     root.add(shrub);
     sway.addSway(shrub, 0.05);
     placed++;
   }
   for (const p of scatterPositions(rng, flora.flowers, { minR, maxR })) {
     const flower = makeFlower(rng, mats);
-    flower.position.set(p.x, groundY, p.z);
+    flower.position.set(p.x, ground(p.x, p.z), p.z);
     root.add(flower);
     placed++;
   }
-  buildGrass(root, rng, flora.grass, groundY, minR, maxR);
+  buildGrass(root, rng, flora.grass, groundY, minR, maxR, heightAt);
 
   return placed > 0 ? sway : null;
 }
