@@ -1092,7 +1092,7 @@ export class Simulation {
     if (s.phase === 'idle') {
       s.phase = 'boost';
       applyOutcome(s, this.config, this.rng, 'ignition');
-      if (s.phase === 'failed') return; // CATO on the pad
+      if (s.outcome === 'cato') return; // CATO on the pad (checked via outcome: TS7 narrows the phase literal)
     }
 
     s.time += DT;
@@ -1496,7 +1496,7 @@ git commit -m "feat(sim): challenge scoring for target-altitude and landing-zone
 ```ts
 import { describe, it, expect } from 'vitest';
 import { motors, motorById } from '../../src/data/motors';
-import { rockets, rocketById, compatibleMotors } from '../../src/data/rockets';
+import { rockets, compatibleMotors } from '../../src/data/rockets';
 import type { MotorClass } from '../../src/sim/types';
 
 describe('catalog', () => {

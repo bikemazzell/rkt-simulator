@@ -1,0 +1,38 @@
+import type { Vec3 } from './types';
+import { vec, add, sub, scale, length } from './vec';
+import { airDensity } from './atmosphere';
+
+export const G = 9.81;
+
+export interface StepInput {
+  position: Vec3;
+  velocity: Vec3;
+  mass: number;
+  thrustN: number;
+  refArea: number;
+  dragCoefficient: number;
+  wind: Vec3;
+  dt: number;
+}
+
+export function stepMotion(input: StepInput): { position: Vec3; velocity: Vec3 } {
+  const { position, velocity, mass, thrustN, refArea, dragCoefficient, wind, dt } = input;
+
+  // Air-relative velocity for drag.
+  const airVel = sub(velocity, wind);
+  const speed = length(airVel);
+  const rho = airDensity(position.y);
+  const dragMag = 0.5 * rho * speed * speed * dragCoefficient * refArea;
+  const dragForce = speed > 0 ? scale(airVel, -dragMag / speed) : vec(0, 0, 0);
+
+  const thrustForce = vec(0, thrustN, 0);
+  const gravityForce = vec(0, -G * mass, 0);
+  const netForce = add(add(thrustForce, gravityForce), dragForce);
+
+  const accel = scale(netForce, 1 / mass);
+
+  // Semi-implicit Euler: update velocity, then position with new velocity.
+  const newVelocity = add(velocity, scale(accel, dt));
+  const newPosition = add(position, scale(newVelocity, dt));
+  return { position: newPosition, velocity: newVelocity };
+}
