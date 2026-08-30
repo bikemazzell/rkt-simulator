@@ -9,6 +9,7 @@ import { DEFAULT_START_PHASE } from '../daynight';
 import { biomeFor } from '../biome';
 import { buildTiledGround } from '../ground';
 import { buildVegetation } from '../vegetation';
+import { CloudSystem } from '../clouds';
 
 function groundDisc(radius: number, color: number): THREE.Mesh {
   const geo = new THREE.CircleGeometry(radius, 48);
@@ -64,6 +65,7 @@ function base(ctx: BuildContext, params: EnvParams, rng: Rng, palette: number[],
   const startPhase = ctx.startPhase ?? DEFAULT_START_PHASE;
   ctx.registerSystem(new AmbientSystem(ctx.scene, ctx.root, startPhase));
   ctx.registerSystem(new SkySystem(ctx.root, startPhase, randInt(rng, 1, 2 ** 31 - 1)));
+  ctx.registerSystem(new CloudSystem(ctx.root, rng, { x: params.wind.base.x, z: params.wind.base.z }));
   if (flat) {
     // e.g. sea: open water covers the ground later; keep the simple disc
     const ground = groundDisc(params.bounds.radius, palette[0]);
