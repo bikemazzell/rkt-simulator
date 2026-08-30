@@ -26,8 +26,12 @@
 ### Task 0: Project scaffolding and quality gate
 
 **Files:**
-- Create: `package.json`, `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, `index.html`, `.gitignore`, `src/main.ts` (stub), `src/style.css`
+- Create: `package.json`, `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, `index.html`, `.gitignore`, `src/main.ts` (stub), `src/style.css`, `src/vite-env.d.ts`
 - Test: `tests/smoke.test.ts`
+
+Note: `src/vite-env.d.ts` containing `/// <reference types="vite/client" />` is
+required — TypeScript 7 errors on the `import './style.css'` side-effect import
+without it (TS2882).
 
 **Interfaces:**
 - Consumes: nothing.
@@ -60,18 +64,20 @@ dist/
     "quality": "npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
-    "three": "^0.169.0"
+    "three": "^0.185.0"
   },
   "devDependencies": {
-    "@types/three": "^0.169.0",
-    "typescript": "^5.6.0",
-    "vite": "^5.4.0",
-    "vitest": "^2.1.0"
+    "@types/three": "^0.185.0",
+    "typescript": "^7.0.0",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.0"
   }
 }
 ```
 
-Note for implementer: before installing, verify current published versions with `npm view three version` etc. and bump the ranges if needed; keep `three` and `@types/three` on the same minor.
+Note for implementer: versions verified against npm on 2026-08-30 (three 0.185.1,
+@types/three 0.185.4, typescript 7.0.2, vite 8.2.2, vitest 4.1.11, Node 22.23).
+Keep `three` and `@types/three` on the same minor.
 
 - [ ] **Step 3: Write `tsconfig.json`**
 
