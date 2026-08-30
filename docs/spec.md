@@ -69,9 +69,20 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
 ### 4.3 Controls
 
 - Mouse drag / scroll: orbit + zoom the camera (OrbitControls).
-- Toggle **follow camera** (tracks the rocket) vs **free orbit**.
-- Launch, Reset, and Mute buttons in the UI.
-- Keyboard: `Space` = launch/reset, `C` = toggle camera mode, `M` = mute.
+- Toggle **follow camera** vs **free orbit**. Follow is *rigid*: the orbit target
+  tracks the rocket and the camera translates with it, so the rocket stays framed
+  at any altitude while the user's own zoom and orbit angle are preserved.
+- In **orbit** mode, held **WASD** keys pan the camera continuously across the
+  environment (speed scales with zoom distance).
+- **Speed** control cycles the simulation rate 1x / 4x / 16x so descents under
+  parachute do not take real minutes.
+- A **launch pad** marks the origin and the rocket rests on it; procedural props
+  keep a clear radius around the pad so nothing ever spawns on the rocket.
+- Launch, Reset, Camera, Speed, and Mute buttons in the UI.
+- Keyboard: `Space` = launch/reset, `C` = toggle camera, `F` = cycle speed,
+  `M` = mute, `WASD` = pan (orbit mode).
+- The selected environment is shown immediately (pre-launch preview) and updates
+  when the rocket or environment selection changes.
 
 ## 5. Rockets
 

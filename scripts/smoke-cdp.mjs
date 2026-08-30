@@ -84,16 +84,24 @@ async function main() {
   }
   if (!hasCanvas) throw new Error('canvas never mounted');
 
-  // 2. Click Launch.
-  const clicked = await client.evaluate(`
+  // 2. The Launch button must be the top element at its own center — i.e. a real
+  //    user click would land on it, not on an overlay intercepting pointer events.
+  const hit = await client.evaluate(`
     (() => {
       const btn = [...document.querySelectorAll('button')].find((b) => /launch/i.test(b.textContent));
-      if (!btn) return false;
-      btn.click();
-      return true;
+      if (!btn) return 'no-button';
+      const r = btn.getBoundingClientRect();
+      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return btn.contains(top) ? 'ok' : 'blocked:' + (top ? (top.className || top.tagName) : 'none');
     })()
   `);
-  if (!clicked) throw new Error('Launch button not found');
+  if (hit === 'no-button') throw new Error('Launch button not found');
+  if (hit !== 'ok') throw new Error(`Launch button is not clickable — ${hit} intercepts pointer events`);
+
+  // Click Launch.
+  await client.evaluate(`
+    [...document.querySelectorAll('button')].find((b) => /launch/i.test(b.textContent)).click()
+  `);
 
   // 3. Altitude rises above 0 within ~10 s.
   const readApogee = `

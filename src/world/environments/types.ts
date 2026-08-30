@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 import type { EnvParams } from '../../sim/types';
 import type { Rng } from '../../sim/rng';
 
-export interface BuildContext { scene: THREE.Scene; root: THREE.Group; }
+export interface BuildContext { scene: THREE.Scene; root: THREE.Group; showTargetZone: boolean; }
 
 export interface EnvironmentDef {
   id: string;

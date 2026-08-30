@@ -34,6 +34,8 @@ export function buildRocketMesh(rocket: Rocket): THREE.Group {
     fin.rotation.y = -angle;
     g.add(fin);
   }
+  // Local Y of the nose tip, so recovery visuals can sit above any-size rocket.
+  g.userData.topY = bodyLen + radius * 3;
   return g;
 }
 

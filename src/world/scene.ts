@@ -11,6 +11,8 @@ export class SceneManager {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly controls: OrbitControls;
   private mode: CameraMode = 'orbit';
+  private readonly heldKeys = new Set<string>();
+  private readonly clock = new THREE.Clock();
 
   constructor(private readonly host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -25,9 +27,39 @@ export class SceneManager {
     this.controls.enableDamping = true;
     this.resize();
     window.addEventListener('resize', () => this.resize());
+
+    // Continuous WASD panning (held keys keep moving) in orbit mode.
+    const isTyping = () => {
+      const a = document.activeElement;
+      return a instanceof HTMLInputElement || a instanceof HTMLSelectElement;
+    };
+    window.addEventListener('keydown', (e) => {
+      if (!isTyping() && 'wasd'.includes(e.key.toLowerCase())) this.heldKeys.add(e.key.toLowerCase());
+    });
+    window.addEventListener('keyup', (e) => this.heldKeys.delete(e.key.toLowerCase()));
+    window.addEventListener('blur', () => this.heldKeys.clear());
   }
 
   setCameraMode(mode: CameraMode): void { this.mode = mode; }
+
+  private applyPan(dt: number): void {
+    if (this.mode !== 'orbit' || this.heldKeys.size === 0) return;
+    const forward = new THREE.Vector3().subVectors(this.controls.target, this.camera.position);
+    forward.y = 0;
+    if (forward.lengthSq() === 0) return;
+    forward.normalize();
+    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+    const move = new THREE.Vector3();
+    if (this.heldKeys.has('w')) move.add(forward);
+    if (this.heldKeys.has('s')) move.sub(forward);
+    if (this.heldKeys.has('d')) move.add(right);
+    if (this.heldKeys.has('a')) move.sub(right);
+    if (move.lengthSq() === 0) return;
+    const speed = Math.max(40, this.camera.position.distanceTo(this.controls.target) * 0.9);
+    move.normalize().multiplyScalar(speed * dt);
+    this.camera.position.add(move);
+    this.controls.target.add(move);
+  }
 
   clearWorld(): void {
     for (const child of [...this.worldGroup.children]) {
@@ -49,12 +81,17 @@ export class SceneManager {
   }
 
   render(rocketPos: Vec3): void {
+    const dt = this.clock.getDelta();
     if (this.mode === 'follow') {
-      const target = new THREE.Vector3(rocketPos.x, rocketPos.y, rocketPos.z);
-      const desired = target.clone().add(new THREE.Vector3(30, 15, 40));
-      this.camera.position.lerp(desired, 0.08);
-      this.controls.target.lerp(target, 0.2);
+      // Rigid follow: move the orbit target toward the rocket and translate the
+      // camera by the same delta. The rocket stays framed at any altitude while
+      // the user's own scroll-zoom and orbit angle are preserved.
+      const desired = new THREE.Vector3(rocketPos.x, rocketPos.y, rocketPos.z);
+      const delta = desired.sub(this.controls.target).multiplyScalar(0.35);
+      this.controls.target.add(delta);
+      this.camera.position.add(delta);
     }
+    this.applyPan(dt);
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }

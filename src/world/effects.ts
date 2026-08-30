@@ -20,7 +20,9 @@ export class RocketVisual {
     this.chute = buildParachute();
     this.chute.visible = false;
     rocket.add(this.chute);
-    this.chute.position.y = 6;
+    // Sit the canopy above the nose tip regardless of the rocket's length.
+    const topY = typeof rocket.userData.topY === 'number' ? rocket.userData.topY : 8;
+    this.chute.position.y = topY + 3;
   }
 
   update(state: FlightState): void {

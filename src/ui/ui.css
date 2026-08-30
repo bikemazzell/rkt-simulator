@@ -66,6 +66,9 @@
   background: rgba(4, 6, 10, 0.55);
   z-index: 20;
 }
+/* The class sets display:flex, which would otherwise override the `hidden`
+   attribute and leave this full-screen overlay intercepting every click. */
+.rkt-summary[hidden] { display: none; }
 .rkt-summary-card {
   background: #141922;
   color: #e6ebf2;

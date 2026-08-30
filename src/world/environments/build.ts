@@ -40,18 +40,34 @@ function markTargetZone(root: THREE.Group, params: EnvParams): void {
   root.add(ring);
 }
 
-function base(ctx: BuildContext, params: EnvParams, groundColor: number, sky: number): void {
+// Keep a clear launch area around the origin so nothing (trees, buildings,
+// mountains) ever spawns on top of the rocket.
+const LAUNCH_CLEARANCE = 30;
+
+function launchPad(groundHeight: number): THREE.Mesh {
+  const pad = new THREE.Mesh(
+    new THREE.CylinderGeometry(5, 5, 0.4, 20),
+    new THREE.MeshLambertMaterial({ color: 0x30343a }),
+  );
+  pad.position.set(0, groundHeight - 0.2, 0); // top flush with the ground so the rocket rests on it
+  return pad;
+}
+
+function base(ctx: BuildContext, params: EnvParams, groundColor: number, sky: number, withPad = true): void {
   ctx.scene.background = new THREE.Color(sky);
   addLights(ctx.root);
   const ground = groundDisc(params.bounds.radius, groundColor);
   ground.position.y = params.groundHeight;
   ctx.root.add(ground);
-  markTargetZone(ctx.root, params);
+  if (withPad) ctx.root.add(launchPad(params.groundHeight));
+  if (ctx.showTargetZone) markTargetZone(ctx.root, params);
 }
 
-function scatter(ctx: BuildContext, params: EnvParams, count: number, make: (x: number, z: number) => THREE.Object3D, rng: Rng): void {
+// Scatter props between `minR` (kept clear of the launch pad) and the bounds.
+function scatter(ctx: BuildContext, params: EnvParams, count: number, make: (x: number, z: number) => THREE.Object3D, rng: Rng, minR = LAUNCH_CLEARANCE): void {
+  const inner = Math.max(minR, LAUNCH_CLEARANCE);
   for (let i = 0; i < count; i++) {
-    const r = randRange(rng, 20, params.bounds.radius * 0.9);
+    const r = randRange(rng, inner, params.bounds.radius * 0.9);
     const a = randRange(rng, 0, Math.PI * 2);
     ctx.root.add(make(Math.cos(a) * r, Math.sin(a) * r));
   }
@@ -82,10 +98,11 @@ function urban(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 function mountain(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const g = params.groundHeight;
   base(ctx, params, 0x6b7a55, 0x8fb0d0);
+  // Big footprints: push peaks well out so their bases never cover the pad.
   scatter(ctx, params, 30, (x, z) => {
-    const h = randRange(rng, 60, 220);
-    return cone(h * 0.7, h, 0x7a6f5a, x, g + h / 2, z);
-  }, rng);
+    const h = randRange(rng, 60, 200);
+    return cone(h * 0.45, h, 0x7a6f5a, x, g + h / 2, z);
+  }, rng, 200);
 }
 
 function desert(ctx: BuildContext, params: EnvParams, rng: Rng): void {
@@ -101,10 +118,10 @@ function desert(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 
 function sea(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const g = params.groundHeight;
-  base(ctx, params, 0x2a6f9e, 0xbfe0f5);
-  // A launch raft at the origin so the rocket does not start in open water.
-  ctx.root.add(box(14, 1, 14, 0x8a6d3b, 0, g + 0.5, 0));
-  scatter(ctx, params, 8, (x, z) => box(3, 2, 8, 0xdddddd, x, g + 1, z), rng); // distant boats
+  base(ctx, params, 0x2a6f9e, 0xbfe0f5, false); // the raft is the launch platform
+  // Launch raft at the origin (top flush with water) so the rocket rests on it.
+  ctx.root.add(box(16, 1, 16, 0x8a6d3b, 0, g - 0.5, 0));
+  scatter(ctx, params, 8, (x, z) => box(3, 2, 8, 0xdddddd, x, g + 1, z), rng, 60); // distant boats
 }
 
 function rooftop(ctx: BuildContext, params: EnvParams, rng: Rng): void {

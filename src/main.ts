@@ -18,26 +18,72 @@ const host = document.getElementById('app')!;
 const scene = new SceneManager(host);
 const sfx = new Sfx();
 
+const PREVIEW_SEED = 1; // stable, so the pre-launch scene does not jitter
+
 let sim: Simulation | null = null;
 let visual: RocketVisual | null = null;
+let previewMesh: ReturnType<typeof buildRocketMesh> | null = null;
 let current: { params: EnvParams; challenge: ChallengeConfig } | null = null;
 let cameraMode: 'orbit' | 'follow' = 'follow';
+let groundHeight = 0;
+let finished = false;
 let accumulator = 0;
 let last = performance.now();
 
+const SPEEDS = [1, 4, 16];
+let speed = 1;
+function cycleSpeed(): number {
+  speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+  return speed;
+}
+
 const ui = new Ui(host, {
   onLaunch: launch,
-  onReset: reset,
+  onReset: showPreview,
   onToggleMute: () => sfx.toggleMute(),
   onToggleCamera: () => {
     cameraMode = cameraMode === 'orbit' ? 'follow' : 'orbit';
     scene.setCameraMode(cameraMode);
   },
-  onRocketChange: () => {},
+  onRocketChange: showPreview,
+  onEnvChange: showPreview,
+  onCycleSpeed: cycleSpeed,
 });
 
+function clearRocket(): void {
+  if (visual) { visual.dispose(); visual = null; }
+  if (previewMesh) { scene.scene.remove(previewMesh); previewMesh = null; }
+}
+
+// Render the selected environment with the rocket resting on the pad, before any
+// launch and after reset/selection changes, so the scene is never empty/black.
+function showPreview(): void {
+  clearRocket();
+  sim = null;
+  const sel = ui.getSelection();
+  const rocket = rocketById(sel.rocketId)!;
+  const env = environmentById(sel.envId)!;
+  const params = makeParamsFor(env.id, PREVIEW_SEED);
+
+  scene.clearWorld();
+  scene.reset();
+  env.build(
+    { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone' },
+    params, mulberry32(PREVIEW_SEED),
+  );
+
+  previewMesh = buildRocketMesh(rocket);
+  previewMesh.position.set(0, params.groundHeight, 0);
+  scene.scene.add(previewMesh);
+
+  groundHeight = params.groundHeight;
+  finished = false;
+  ui.setLaunchEnabled(true);
+  ui.hideSummary();
+}
+
 function launch(): void {
-  reset();
+  clearRocket();
   const sel = ui.getSelection();
   const rocket = rocketById(sel.rocketId)!;
   const motor = motorById(sel.motorId) ?? compatibleMotors(rocket)[0];
@@ -48,12 +94,17 @@ function launch(): void {
 
   scene.clearWorld();
   scene.reset();
-  env.build({ scene: scene.scene, root: scene.worldGroup }, params, mulberry32(seed));
+  env.build(
+    { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone' },
+    params, mulberry32(seed),
+  );
 
   sim = new Simulation({ rocket, motor, environment: params, seed, challenge: sel.challenge });
   const mesh = buildRocketMesh(rocket);
   mesh.position.set(0, params.groundHeight, 0);
   visual = new RocketVisual(scene.scene, mesh);
+  groundHeight = params.groundHeight;
+  finished = false;
   accumulator = 0;                  // discard any leftover fractional tick
   last = performance.now();         // reset timing baseline for this flight
   sfx.play('launch');
@@ -61,23 +112,26 @@ function launch(): void {
   ui.hideSummary();
 }
 
-function reset(): void {
-  if (visual) { visual.dispose(); visual = null; }
-  sim = null;
-  ui.setLaunchEnabled(true);
-}
-
 function frame(now: number): void {
   const dtMs = Math.min(now - last, 100);
   last = now;
-  if (sim && !sim.done) {
-    accumulator += dtMs / 1000;
-    while (accumulator >= DT) { sim.step(); accumulator -= DT; }
-    visual!.update(sim.state);
-    ui.updateHud(sim.state);
-    if (sim.done) finish();
+  if (sim) {
+    if (!sim.done) {
+      accumulator += (dtMs / 1000) * speed;
+      while (accumulator >= DT) { sim.step(); accumulator -= DT; }
+    }
+    // Keep updating the visual after the flight ends so the explosion animates
+    // and the wreck stays put until the player launches or resets.
+    visual?.update(sim.state);
+    ui.updateHud(sim.state, groundHeight);
+    if (sim.done && !finished) { finished = true; finish(); }
   }
-  scene.render(sim ? sim.state.position : { x: 0, y: 10, z: 0 });
+  const focus = sim
+    ? sim.state.position
+    : previewMesh
+      ? { x: previewMesh.position.x, y: previewMesh.position.y + 10, z: previewMesh.position.z }
+      : { x: 0, y: 10, z: 0 };
+  scene.render(focus);
   requestAnimationFrame(frame);
 }
 
@@ -93,11 +147,13 @@ function finish(): void {
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
   switch (e.key.toLowerCase()) {
-    case ' ': e.preventDefault(); sim && !sim.done ? reset() : launch(); break;
+    case ' ': e.preventDefault(); sim && !sim.done ? showPreview() : launch(); break;
     case 'c': cameraMode = cameraMode === 'orbit' ? 'follow' : 'orbit'; scene.setCameraMode(cameraMode); break;
+    case 'f': ui.setSpeedLabel(cycleSpeed()); break;
     case 'm': sfx.toggleMute(); break;
   }
 });
 
 scene.setCameraMode(cameraMode);
+showPreview();
 requestAnimationFrame(frame);

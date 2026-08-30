@@ -10,6 +10,8 @@ export interface UiHandlers {
   onToggleMute(): boolean;
   onToggleCamera(): void;
   onRocketChange(id: string): void;
+  onEnvChange(id: string): void;
+  onCycleSpeed(): number;
 }
 
 const OUTCOME_LABEL: Record<string, string> = {
@@ -41,6 +43,7 @@ export class Ui {
   private readonly targetAltInput = el('input', 'rkt-input');
   private readonly anyMotorChk = el('input');
   private readonly launchBtn = el('button', 'rkt-btn rkt-btn-primary', 'Launch');
+  private readonly speedBtn = el('button', 'rkt-btn', 'Speed: 1x');
   private readonly hud = el('div', 'rkt-hud');
   private readonly summary = el('div', 'rkt-summary');
 
@@ -55,6 +58,7 @@ export class Ui {
       this.repopulateMotors();
       this.handlers.onRocketChange(this.rocketSel.value);
     });
+    this.envSel.addEventListener('change', () => this.handlers.onEnvChange(this.envSel.value));
 
     this.anyMotorChk.type = 'checkbox';
     this.anyMotorChk.addEventListener('change', () => this.repopulateMotors());
@@ -79,6 +83,7 @@ export class Ui {
       this.handlers.onToggleCamera();
       camBtn.textContent = camBtn.textContent === 'Camera: Follow' ? 'Camera: Orbit' : 'Camera: Follow';
     });
+    this.speedBtn.addEventListener('click', () => this.setSpeedLabel(this.handlers.onCycleSpeed()));
 
     panel.append(
       el('h1', 'rkt-title', 'RKT Simulator'),
@@ -89,8 +94,9 @@ export class Ui {
       this.field('Challenge', this.challengeSel),
       this.field('Target altitude (m)', this.targetAltInput),
       this.buttonRow(this.launchBtn, resetBtn),
-      this.buttonRow(muteBtn, camBtn),
-      el('p', 'rkt-hint', 'Space: launch/reset · C: camera · M: mute'),
+      this.buttonRow(camBtn, this.speedBtn),
+      this.buttonRow(muteBtn),
+      el('p', 'rkt-hint', 'Space: launch/reset · C: camera · F: speed · M: mute · WASD: move'),
     );
 
     this.summary.hidden = true;
@@ -127,8 +133,8 @@ export class Ui {
     return { rocketId: this.rocketSel.value, motorId: this.motorSel.value, envId: this.envSel.value, challenge };
   }
 
-  updateHud(state: FlightState): void {
-    this.updateHudText(phaseLabel(state.phase), state.position.y, state.velocity.y, state.apogee);
+  updateHud(state: FlightState, groundHeight = 0): void {
+    this.updateHudText(phaseLabel(state.phase), state.position.y - groundHeight, state.velocity.y, state.apogee);
   }
 
   private updateHudText(phase: string, altitude: number, vspeed: number, apogee: number): void {
@@ -173,6 +179,8 @@ export class Ui {
   }
 
   hideSummary(): void { this.summary.hidden = true; }
+
+  setSpeedLabel(multiplier: number): void { this.speedBtn.textContent = `Speed: ${multiplier}x`; }
 
   setLaunchEnabled(enabled: boolean): void {
     (this.launchBtn as HTMLButtonElement).disabled = !enabled;
