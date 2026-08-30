@@ -27,6 +27,7 @@ let current: { params: EnvParams; challenge: ChallengeConfig } | null = null;
 let cameraMode: 'orbit' | 'follow' = 'follow';
 let groundHeight = 0;
 let finished = false;
+let summaryTimer: ReturnType<typeof setTimeout> | null = null;
 let accumulator = 0;
 let last = performance.now();
 
@@ -139,9 +140,12 @@ function finish(): void {
   if (!sim || !current) return;
   const summary = sim.summary();
   summary.challenge = scoreChallenge(current.challenge, current.params, summary, sim.state.position);
-  ui.showSummary(summary);
+  const crashed = summary.outcome === 'cato' || summary.outcome === 'chute-fail';
+  sfx.play(crashed ? 'boom' : 'chute');
   ui.setLaunchEnabled(true);
-  sfx.play(summary.outcome === 'cato' ? 'boom' : 'chute');
+  // Let the explosion play before the summary covers the scene.
+  if (summaryTimer) clearTimeout(summaryTimer);
+  summaryTimer = setTimeout(() => ui.showSummary(summary), crashed ? 1300 : 400);
 }
 
 window.addEventListener('keydown', (e) => {

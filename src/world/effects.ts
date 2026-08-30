@@ -2,13 +2,18 @@ import * as THREE from 'three';
 import type { FlightState } from '../sim/types';
 import { buildFlame, buildParachute } from './rocketMesh';
 
-const EXPLOSION_COUNT = 120;
+const EXPLOSION_COLORS = [0xff3020, 0xff8c00, 0xffe14d, 0xffffff];
+const EXPLOSION_COUNT = 16;
+const EXPLOSION_LIFE = 1.3; // seconds
+
+interface Debris { mesh: THREE.Mesh; vel: THREE.Vector3; }
 
 export class RocketVisual {
   private readonly flame: THREE.Mesh;
   private readonly chute: THREE.Mesh;
-  private explosion: THREE.Points | null = null;
-  private explosionVel: Float32Array | null = null;
+  private explosion: THREE.Group | null = null;
+  private readonly debris: Debris[] = [];
+  private readonly debrisGeo = new THREE.SphereGeometry(1, 8, 8);
   private explosionAge = 0;
   private exploded = false;
 
@@ -43,39 +48,47 @@ export class RocketVisual {
   explode(): void {
     this.exploded = true;
     this.rocket.visible = false;
-    const positions = new Float32Array(EXPLOSION_COUNT * 3);
-    this.explosionVel = new Float32Array(EXPLOSION_COUNT * 3);
-    for (let i = 0; i < EXPLOSION_COUNT; i++) {
-      const dir = new THREE.Vector3().randomDirection().multiplyScalar(6 + Math.random() * 10);
-      this.explosionVel[i * 3] = dir.x;
-      this.explosionVel[i * 3 + 1] = dir.y;
-      this.explosionVel[i * 3 + 2] = dir.z;
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const mat = new THREE.PointsMaterial({ color: 0xff6600, size: 1.5, transparent: true, opacity: 1 });
-    this.explosion = new THREE.Points(geo, mat);
+    this.explosion = new THREE.Group();
     this.explosion.position.copy(this.rocket.position);
+    for (let i = 0; i < EXPLOSION_COUNT; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: EXPLOSION_COLORS[i % EXPLOSION_COLORS.length], transparent: true, opacity: 1,
+      });
+      const mesh = new THREE.Mesh(this.debrisGeo, mat);
+      mesh.scale.setScalar(0.8 + Math.random() * 1.8);
+      const vel = new THREE.Vector3().randomDirection().multiplyScalar(8 + Math.random() * 16);
+      vel.y = Math.abs(vel.y) * 0.7 + 4; // bias the burst upward
+      this.debris.push({ mesh, vel });
+      this.explosion.add(mesh);
+    }
     this.scene.add(this.explosion);
   }
 
   private animateExplosion(): void {
-    if (!this.explosion || !this.explosionVel) return;
-    this.explosionAge += 1 / 60;
-    const attr = this.explosion.geometry.getAttribute('position') as THREE.BufferAttribute;
-    for (let i = 0; i < EXPLOSION_COUNT; i++) {
-      attr.setXYZ(i,
-        attr.getX(i) + this.explosionVel[i * 3] / 60,
-        attr.getY(i) + this.explosionVel[i * 3 + 1] / 60,
-        attr.getZ(i) + this.explosionVel[i * 3 + 2] / 60);
+    if (!this.explosion) return;
+    const dt = 1 / 60;
+    this.explosionAge += dt;
+    const fade = Math.max(0, 1 - this.explosionAge / EXPLOSION_LIFE);
+    for (const { mesh, vel } of this.debris) {
+      mesh.position.addScaledVector(vel, dt);
+      vel.y -= 22 * dt; // gravity arc
+      mesh.scale.multiplyScalar(0.975);
+      (mesh.material as THREE.MeshBasicMaterial).opacity = fade;
     }
-    attr.needsUpdate = true;
-    const mat = this.explosion.material as THREE.PointsMaterial;
-    mat.opacity = Math.max(0, 1 - this.explosionAge); // fade over ~1 s
+    if (this.explosionAge >= EXPLOSION_LIFE) this.disposeExplosion();
+  }
+
+  private disposeExplosion(): void {
+    if (!this.explosion) return;
+    this.scene.remove(this.explosion);
+    for (const { mesh } of this.debris) (mesh.material as THREE.MeshBasicMaterial).dispose();
+    this.debris.length = 0;
+    this.explosion = null;
   }
 
   dispose(): void {
     this.scene.remove(this.rocket);
-    if (this.explosion) this.scene.remove(this.explosion);
+    this.disposeExplosion();
+    this.debrisGeo.dispose();
   }
 }

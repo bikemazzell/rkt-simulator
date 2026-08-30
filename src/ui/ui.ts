@@ -96,7 +96,7 @@ export class Ui {
       this.buttonRow(this.launchBtn, resetBtn),
       this.buttonRow(camBtn, this.speedBtn),
       this.buttonRow(muteBtn),
-      el('p', 'rkt-hint', 'Space: launch/reset · C: camera · F: speed · M: mute · WASD: move'),
+      el('p', 'rkt-hint', 'Space: launch/reset · C: camera · F: speed · M: mute · WASD move · QE up/down'),
     );
 
     this.summary.hidden = true;

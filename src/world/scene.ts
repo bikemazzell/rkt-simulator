@@ -34,7 +34,8 @@ export class SceneManager {
       return a instanceof HTMLInputElement || a instanceof HTMLSelectElement;
     };
     window.addEventListener('keydown', (e) => {
-      if (!isTyping() && 'wasd'.includes(e.key.toLowerCase())) this.heldKeys.add(e.key.toLowerCase());
+      const k = e.key.toLowerCase();
+      if (!isTyping() && 'wasdqe'.includes(k)) this.heldKeys.add(k);
     });
     window.addEventListener('keyup', (e) => this.heldKeys.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => this.heldKeys.clear());
@@ -54,6 +55,8 @@ export class SceneManager {
     if (this.heldKeys.has('s')) move.sub(forward);
     if (this.heldKeys.has('d')) move.add(right);
     if (this.heldKeys.has('a')) move.sub(right);
+    if (this.heldKeys.has('q')) move.y += 1; // rise
+    if (this.heldKeys.has('e')) move.y -= 1; // descend
     if (move.lengthSq() === 0) return;
     const speed = Math.max(40, this.camera.position.distanceTo(this.controls.target) * 0.9);
     move.normalize().multiplyScalar(speed * dt);
@@ -83,11 +86,12 @@ export class SceneManager {
   render(rocketPos: Vec3): void {
     const dt = this.clock.getDelta();
     if (this.mode === 'follow') {
-      // Rigid follow: move the orbit target toward the rocket and translate the
-      // camera by the same delta. The rocket stays framed at any altitude while
-      // the user's own scroll-zoom and orbit angle are preserved.
+      // Rigid, zero-lag follow: snap the orbit target to the rocket and translate
+      // the camera by the same delta. The rocket stays fixed in frame (only the
+      // world slides) so there is no smoothing overshoot/jitter, while the user's
+      // own scroll-zoom and orbit angle are preserved.
       const desired = new THREE.Vector3(rocketPos.x, rocketPos.y, rocketPos.z);
-      const delta = desired.sub(this.controls.target).multiplyScalar(0.35);
+      const delta = desired.sub(this.controls.target);
       this.controls.target.add(delta);
       this.camera.position.add(delta);
     }
