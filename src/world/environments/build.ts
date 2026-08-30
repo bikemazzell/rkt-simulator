@@ -10,6 +10,7 @@ import { biomeFor } from '../biome';
 import { buildTiledGround } from '../ground';
 import { buildVegetation } from '../vegetation';
 import { CloudSystem } from '../clouds';
+import { CreatureSystem } from '../creatures';
 
 function groundDisc(radius: number, color: number): THREE.Mesh {
   const geo = new THREE.CircleGeometry(radius, 48);
@@ -102,10 +103,22 @@ function scatter(ctx: BuildContext, params: EnvParams, count: number, make: (x: 
   }
 }
 
+/** Scatter the biome's creatures and register their animation system. */
+function critters(ctx: BuildContext, params: EnvParams, rng: Rng, biome: ReturnType<typeof biomeFor>, opts: { groundY?: number; minR?: number; maxR?: number } = {}): CreatureSystem | null {
+  const sys = new CreatureSystem(ctx.root, biome, rng, {
+    groundY: opts.groundY ?? biome.creatures.groundY ?? params.groundHeight,
+    minR: opts.minR ?? LAUNCH_CLEARANCE,
+    maxR: opts.maxR ?? params.bounds.radius * 0.9,
+  });
+  ctx.registerSystem(sys);
+  return sys;
+}
+
 function park(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('park');
   base(ctx, params, rng, biome.groundPalette);
   flora(ctx, params, rng, biome); // oaks + birches, shrubs, flowers, grass
+  critters(ctx, params, rng, biome);
 }
 
 function urban(ctx: BuildContext, params: EnvParams, rng: Rng): void {
@@ -119,6 +132,7 @@ function urban(ctx: BuildContext, params: EnvParams, rng: Rng): void {
     return box(w, h, w, shade, x, g + h / 2, z);
   }, rng);
   flora(ctx, params, rng, biome); // street trees in the gaps
+  critters(ctx, params, rng, biome); // pedestrians + pigeons
 }
 
 function mountain(ctx: BuildContext, params: EnvParams, rng: Rng): void {
@@ -131,20 +145,24 @@ function mountain(ctx: BuildContext, params: EnvParams, rng: Rng): void {
     return cone(h * 0.45, h, 0x7a6f5a, x, g + h / 2, z);
   }, rng, 200);
   flora(ctx, params, rng, biome); // pines on the lower slopes
+  critters(ctx, params, rng, biome); // mountain goats + hawks
 }
 
 function desert(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('desert');
   base(ctx, params, rng, biome.groundPalette);
   flora(ctx, params, rng, biome); // cacti + dry shrubs
+  critters(ctx, params, rng, biome); // villager + critters + vultures
 }
 
 function sea(ctx: BuildContext, params: EnvParams, rng: Rng): void {
+  const biome = biomeFor('sea');
   const g = params.groundHeight;
-  base(ctx, params, rng, biomeFor('sea').groundPalette, { pad: false, flat: true }); // the raft is the launch platform
+  base(ctx, params, rng, biome.groundPalette, { pad: false, flat: true }); // the raft is the launch platform
   // Launch raft at the origin (top flush with water) so the rocket rests on it.
   ctx.root.add(box(16, 1, 16, 0x8a6d3b, 0, g - 0.5, 0));
   scatter(ctx, params, 8, (x, z) => box(3, 2, 8, 0xdddddd, x, g + 1, z), rng, 60); // distant boats
+  critters(ctx, params, rng, biome); // seagulls only (no land walkers)
 }
 
 function rooftop(ctx: BuildContext, params: EnvParams, rng: Rng): void {
@@ -158,11 +176,14 @@ function rooftop(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   ctx.root.add(box(4, 4, 4, 0x555555, 15, g + 2, -12));    // vent block
   ctx.root.add(box(3, 6, 3, 0x777777, 20, g + 3, 18));     // chimney
   flora(ctx, params, rng, biome, { groundY: g, minR: 8, maxR: 24 }); // planter hedges + tufts
+  critters(ctx, params, rng, biome, { minR: 45 }); // street level, clear of the house
 }
 
 function bathtub(ctx: BuildContext, params: EnvParams, rng: Rng): void {
+  const biome = biomeFor('bathtub');
   const g = params.groundHeight;
-  base(ctx, params, rng, biomeFor('bathtub').groundPalette);
+  base(ctx, params, rng, biome.groundPalette);
+  critters(ctx, params, rng, biome); // yellow rubber-duck patrols
   // Tub rim.
   const rim = new THREE.Mesh(
     new THREE.TorusGeometry(45, 5, 12, 32),
@@ -193,14 +214,18 @@ function backyardDog(ctx: BuildContext, params: EnvParams, rng: Rng): void {
     ctx.root.add(box(1, 6, 1, 0x8b5a2b, Math.cos(a) * (params.bounds.radius - 5), g + 3, Math.sin(a) * (params.bounds.radius - 5)));
   }
   flora(ctx, params, rng, biome, { maxR: params.bounds.radius - 15 }); // hedges, flowers, grass
-  // An angry dog near the landing zone.
+  const creatureSys = critters(ctx, params, rng, biome);
+  // An angry dog near the landing zone, head bobbing as it growls.
   const dog = new THREE.Group();
   dog.add(box(6, 3, 3, 0x7a4a1e, 0, g + 2.5, 0));   // body
-  dog.add(box(3, 3, 3, 0x7a4a1e, 4, g + 3.5, 0));   // head
+  const dogHead = box(3, 3, 3, 0x7a4a1e, 4, g + 3.5, 0); // head
+  dog.add(dogHead);
   dog.add(box(1, 3, 1, 0x7a4a1e, -3, g + 1.5, 0));  // tail
   const target = params.targetZone;
   dog.position.set(target ? target.center.x : 20, 0, target ? target.center.z : 0);
+  dog.rotation.y = Math.PI; // head (at +x local) faces the pad at the origin
   ctx.root.add(dog);
+  creatureSys?.addHeadBob(dogHead, 0.18, 2.6);
 }
 
 export const environmentDefs: EnvironmentDef[] = [

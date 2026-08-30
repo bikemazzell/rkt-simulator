@@ -42,6 +42,11 @@ function applyDebugCam(): void {
   }
 }
 
+// ?debug=1 exposes the scene manager for CDP-based verification scripts.
+if (qs.get('debug') === '1') {
+  (window as unknown as Record<string, unknown>).__rkt = { scene };
+}
+
 let sim: Simulation | null = null;
 let visual: RocketVisual | null = null;
 let previewMesh: ReturnType<typeof buildRocketMesh> | null = null;
