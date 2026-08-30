@@ -20,6 +20,13 @@ const sfx = new Sfx();
 
 const PREVIEW_SEED = 1; // stable, so the pre-launch scene does not jitter
 
+// Debug overrides for deterministic CDP verification: ?tod=<0..1> sets the
+// day/night start phase (?weather arrives with the weather task).
+const todParam = new URLSearchParams(location.search).get('tod');
+const startPhase = todParam !== null && todParam !== '' && !Number.isNaN(Number(todParam))
+  ? Number(todParam)
+  : undefined;
+
 let sim: Simulation | null = null;
 let visual: RocketVisual | null = null;
 let previewMesh: ReturnType<typeof buildRocketMesh> | null = null;
@@ -69,7 +76,7 @@ function showPreview(): void {
   scene.clearWorld();
   scene.reset();
   env.build(
-    { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone' },
+    { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone', registerSystem: (sys) => scene.registerWorldSystem(sys), startPhase },
     params, mulberry32(PREVIEW_SEED),
   );
 
@@ -96,7 +103,7 @@ function launch(): void {
   scene.clearWorld();
   scene.reset();
   env.build(
-    { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone' },
+    { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone', registerSystem: (sys) => scene.registerWorldSystem(sys), startPhase },
     params, mulberry32(seed),
   );
 

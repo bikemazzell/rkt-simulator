@@ -3,18 +3,13 @@ import type { BuildContext, EnvironmentDef } from './types';
 import type { EnvParams } from '../../sim/types';
 import { randRange, randInt, type Rng } from '../../sim/rng';
 import * as P from './params';
+import { AmbientSystem } from '../ambient';
+import { DEFAULT_START_PHASE } from '../daynight';
 
 function groundDisc(radius: number, color: number): THREE.Mesh {
   const geo = new THREE.CircleGeometry(radius, 48);
   geo.rotateX(-Math.PI / 2);
   return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color }));
-}
-
-function addLights(root: THREE.Group): void {
-  root.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.0));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-  sun.position.set(50, 120, 40);
-  root.add(sun);
 }
 
 function box(w: number, h: number, d: number, color: number, x: number, y: number, z: number): THREE.Mesh {
@@ -57,10 +52,11 @@ function launchPad(groundHeight: number): THREE.Mesh {
 
 interface BaseOpts { pad?: boolean; groundY?: number; }
 
-function base(ctx: BuildContext, params: EnvParams, groundColor: number, sky: number, opts: BaseOpts = {}): void {
+function base(ctx: BuildContext, params: EnvParams, groundColor: number, opts: BaseOpts = {}): void {
   const { pad = true, groundY = params.groundHeight } = opts;
-  ctx.scene.background = new THREE.Color(sky);
-  addLights(ctx.root);
+  // Ambient presentation (day/night lights, background, fog) is owned by the
+  // AmbientSystem, registered here for every environment.
+  ctx.registerSystem(new AmbientSystem(ctx.scene, ctx.root, ctx.startPhase ?? DEFAULT_START_PHASE));
   const ground = groundDisc(params.bounds.radius, groundColor);
   // Sit the ground disc a hair below the surface so props/pad resting at
   // groundHeight never share a plane with it (avoids z-fighting flicker).
@@ -82,7 +78,7 @@ function scatter(ctx: BuildContext, params: EnvParams, count: number, make: (x: 
 
 function park(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const g = params.groundHeight;
-  base(ctx, params, 0x4a8f3c, 0x87ceeb);
+  base(ctx, params, 0x4a8f3c);
   scatter(ctx, params, 40, (x, z) => {
     const tree = new THREE.Group();
     tree.add(box(1, 4, 1, 0x6b4423, x, g + 2, z));
@@ -93,7 +89,7 @@ function park(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 
 function urban(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const g = params.groundHeight;
-  base(ctx, params, 0x555a60, 0x9fb4c7);
+  base(ctx, params, 0x555a60);
   scatter(ctx, params, 60, (x, z) => {
     const h = randRange(rng, 15, 90);
     const w = randRange(rng, 8, 20);
@@ -104,7 +100,7 @@ function urban(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 
 function mountain(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const g = params.groundHeight;
-  base(ctx, params, 0x6b7a55, 0x8fb0d0);
+  base(ctx, params, 0x6b7a55);
   // Big footprints: push peaks well out so their bases never cover the pad.
   scatter(ctx, params, 30, (x, z) => {
     const h = randRange(rng, 60, 200);
@@ -114,7 +110,7 @@ function mountain(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 
 function desert(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const g = params.groundHeight;
-  base(ctx, params, 0xd9b877, 0xf2e2b6);
+  base(ctx, params, 0xd9b877);
   scatter(ctx, params, 18, (x, z) => {
     const cactus = new THREE.Group();
     cactus.add(box(1.2, 8, 1.2, 0x2f6b3a, x, g + 4, z));
@@ -125,7 +121,7 @@ function desert(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 
 function sea(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const g = params.groundHeight;
-  base(ctx, params, 0x2a6f9e, 0xbfe0f5, { pad: false }); // the raft is the launch platform
+  base(ctx, params, 0x2a6f9e, { pad: false }); // the raft is the launch platform
   // Launch raft at the origin (top flush with water) so the rocket rests on it.
   ctx.root.add(box(16, 1, 16, 0x8a6d3b, 0, g - 0.5, 0));
   scatter(ctx, params, 8, (x, z) => box(3, 2, 8, 0xdddddd, x, g + 1, z), rng, 60); // distant boats
@@ -134,7 +130,7 @@ function sea(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 function rooftop(ctx: BuildContext, params: EnvParams, _rng: Rng): void {
   const g = params.groundHeight;
   // Street level is far below; the house roof (top at g) is the launch surface.
-  base(ctx, params, 0x6b6b6b, 0xa9c0d6, { groundY: 0 });
+  base(ctx, params, 0x6b6b6b, { groundY: 0 });
   ctx.root.add(box(60, g, 60, 0xb5651d, 0, g / 2, 0)); // the house; roof top sits at g
   // A few rooftop fixtures, kept on the roof (well inside its ±30 footprint).
   ctx.root.add(box(6, 3, 6, 0x555555, -18, g + 1.5, 14));  // AC unit
@@ -144,7 +140,7 @@ function rooftop(ctx: BuildContext, params: EnvParams, _rng: Rng): void {
 
 function bathtub(ctx: BuildContext, params: EnvParams, _rng: Rng): void {
   const g = params.groundHeight;
-  base(ctx, params, 0x3aa0d0, 0xbfe9ff);
+  base(ctx, params, 0x3aa0d0);
   // Tub rim.
   const rim = new THREE.Mesh(
     new THREE.TorusGeometry(45, 5, 12, 32),
@@ -166,7 +162,7 @@ function bathtub(ctx: BuildContext, params: EnvParams, _rng: Rng): void {
 
 function backyardDog(ctx: BuildContext, params: EnvParams, _rng: Rng): void {
   const g = params.groundHeight;
-  base(ctx, params, 0x5a9e42, 0x9fd0f0);
+  base(ctx, params, 0x5a9e42);
   // Fence ring.
   const posts = 24;
   for (let i = 0; i < posts; i++) {

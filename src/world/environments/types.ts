@@ -1,8 +1,17 @@
 import type * as THREE from 'three';
 import type { EnvParams } from '../../sim/types';
 import type { Rng } from '../../sim/rng';
+import type { WorldSystem } from '../system';
 
-export interface BuildContext { scene: THREE.Scene; root: THREE.Group; showTargetZone: boolean; }
+export interface BuildContext {
+  scene: THREE.Scene;
+  root: THREE.Group;
+  showTargetZone: boolean;
+  /** register a per-frame animated world system; cleared together with the world */
+  registerSystem(sys: WorldSystem): void;
+  /** day/night start phase override (?tod=...) for deterministic CDP shots */
+  startPhase?: number;
+}
 
 export interface EnvironmentDef {
   id: string;

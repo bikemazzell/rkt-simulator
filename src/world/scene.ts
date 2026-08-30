@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { Vec3 } from '../sim/types';
+import type { WorldSystem } from './system';
 
 export type CameraMode = 'orbit' | 'follow';
 
@@ -13,6 +14,8 @@ export class SceneManager {
   private mode: CameraMode = 'orbit';
   private readonly heldKeys = new Set<string>();
   private readonly clock = new THREE.Clock();
+  private readonly worldSystems: WorldSystem[] = [];
+  private worldElapsed = 0;
 
   constructor(private readonly host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -64,10 +67,22 @@ export class SceneManager {
     this.controls.target.add(move);
   }
 
+  registerWorldSystem(sys: WorldSystem): void {
+    this.worldSystems.push(sys);
+  }
+
   clearWorld(): void {
+    // Systems first: they own scene-level state (fog, background) and may
+    // remove their own renderables; then the mesh traversal cleans the rest.
+    for (const sys of this.worldSystems) sys.dispose();
+    this.worldSystems.length = 0;
+    this.scene.fog = null;
+    this.scene.background = null;
     for (const child of [...this.worldGroup.children]) {
       this.worldGroup.remove(child);
       child.traverse((obj) => {
+        const instanced = obj as THREE.InstancedMesh;
+        if (instanced.isInstancedMesh) instanced.dispose(); // free instance buffers
         const mesh = obj as THREE.Mesh;
         mesh.geometry?.dispose?.();
         const mat = mesh.material;
@@ -85,6 +100,10 @@ export class SceneManager {
 
   render(rocketPos: Vec3): void {
     const dt = this.clock.getDelta();
+    // Real-time ambient animation (day/night, clouds, creatures). Deliberately
+    // NOT scaled by the sim speed multiplier; the world keeps its own pace.
+    this.worldElapsed += dt;
+    for (const sys of this.worldSystems) sys.update(dt, this.worldElapsed);
     if (this.mode === 'follow') {
       // Rigid, zero-lag follow: snap the orbit target to the rocket and translate
       // the camera by the same delta. The rocket stays fixed in frame (only the
