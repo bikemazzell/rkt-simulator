@@ -21,7 +21,9 @@ export class AmbientSystem implements WorldSystem {
   private readonly sun = new THREE.DirectionalLight(0xffffff, 1.2);
   private readonly moon = new THREE.DirectionalLight(0x8fa4cc, 0);
   private readonly bgColor = new THREE.Color(0x87ceeb);
-  private readonly fog = new THREE.Fog(0xbfe3f2, 500, 2600);
+  // Gentle horizon haze that reaches far enough not to swallow the ground on
+  // high flights (the rocket can climb well past the old 2600 m fog wall).
+  private readonly fog = new THREE.Fog(0xbfe3f2, 1200, 11000);
 
   constructor(
     private readonly scene: THREE.Scene,

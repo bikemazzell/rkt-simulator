@@ -112,7 +112,13 @@ export class SkySystem implements WorldSystem {
     root.add(this.stars);
   }
 
-  update(_dt: number, elapsed: number): void {
+  update(_dt: number, elapsed: number, cameraPos?: { x: number; y: number; z: number }): void {
+    // Follow the camera so the sky always surrounds the viewer, even on extreme
+    // flights that climb far above the ground (a proper skybox).
+    const cx = cameraPos?.x ?? 0, cy = cameraPos?.y ?? 0, cz = cameraPos?.z ?? 0;
+    this.dome.position.set(cx, cy, cz);
+    this.stars.position.set(cx, cy, cz);
+
     const phase = phaseAt(this.startPhase, elapsed);
     const sky = skyColors(phase);
     tmpTop.setHex(sky.top);
@@ -132,14 +138,14 @@ export class SkySystem implements WorldSystem {
     // Sun and moon ride their direction; face the world center so a camera
     // near the origin always sees them square-on.
     const sd = sunDirection(phase);
-    this.sun.position.set(sd.x * CELESTIAL_DISTANCE, sd.y * CELESTIAL_DISTANCE, sd.z * CELESTIAL_DISTANCE);
-    this.sun.lookAt(0, 0, 0);
+    this.sun.position.set(cx + sd.x * CELESTIAL_DISTANCE, cy + sd.y * CELESTIAL_DISTANCE, cz + sd.z * CELESTIAL_DISTANCE);
+    this.sun.lookAt(cx, cy, cz);
     this.sun.material.color.setHex(sunColor(phase));
     this.sun.visible = sd.y > -0.12;
 
     const md = moonDirection(phase);
-    this.moon.position.set(md.x * CELESTIAL_DISTANCE, md.y * CELESTIAL_DISTANCE, md.z * CELESTIAL_DISTANCE);
-    this.moon.lookAt(0, 0, 0);
+    this.moon.position.set(cx + md.x * CELESTIAL_DISTANCE, cy + md.y * CELESTIAL_DISTANCE, cz + md.z * CELESTIAL_DISTANCE);
+    this.moon.lookAt(cx, cy, cz);
     this.moonDisc.material.color.setHex(0xdfe4f0);
     this.moon.visible = md.y > -0.12;
 

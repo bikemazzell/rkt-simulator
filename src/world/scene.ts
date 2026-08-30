@@ -23,7 +23,9 @@ export class SceneManager {
     host.appendChild(this.renderer.domElement);
     this.scene.add(this.worldGroup);
 
-    this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 5000);
+    // Large far plane so high flights stay in view; near raised to 0.5 keeps
+    // depth precision better than the old 0.1/5000 despite the bigger range.
+    this.camera = new THREE.PerspectiveCamera(60, 1, 0.5, 15000);
     this.camera.position.set(40, 30, 60);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -117,10 +119,6 @@ export class SceneManager {
 
   render(rocketPos: Vec3): void {
     const dt = this.clock.getDelta();
-    // Real-time ambient animation (day/night, clouds, creatures). Deliberately
-    // NOT scaled by the sim speed multiplier; the world keeps its own pace.
-    this.worldElapsed += dt;
-    for (const sys of this.worldSystems) sys.update(dt, this.worldElapsed);
     if (this.mode === 'follow') {
       // Rigid, zero-lag follow: snap the orbit target to the rocket and translate
       // the camera by the same delta. The rocket stays fixed in frame (only the
@@ -133,6 +131,12 @@ export class SceneManager {
     }
     this.applyPan(dt);
     this.controls.update();
+    // Real-time ambient animation (day/night, clouds, creatures). Deliberately
+    // NOT scaled by the sim speed multiplier; the world keeps its own pace.
+    // Runs after the camera moves so sky/backdrop systems can recenter on it,
+    // keeping the world around the rocket at any altitude.
+    this.worldElapsed += dt;
+    for (const sys of this.worldSystems) sys.update(dt, this.worldElapsed, this.camera.position);
     this.renderer.render(this.scene, this.camera);
   }
 
