@@ -1,5 +1,12 @@
 # World Enrichment Plan — Blocky Scenic Overhaul
 
+> **STATUS: COMPLETE.** All tasks shipped: world-system infra + day/night +
+> biomes (5d91ef6), tiled ground (79b0e99), sky dome/sun/moon/stars (cb384d8),
+> vegetation (68a8efe), clouds (05d7f15), creatures (3fb3c55), water (e830270),
+> weather (f7ddecf), and an extra user-requested task — procedural stepped
+> heightmap terrain (8473c0e). Deviations from the plan below are minor and
+> noted inline; the architecture section reflects the design as built.
+
 **Goal:** Transform the flat, static environments into lively, Minecraft-style
 scenes: multi-colored blocky tile ground, day/night cycle with sun/moon/stars,
 drifting blocky clouds, weather (rain/snow/storm), blocky vegetation with wind

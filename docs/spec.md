@@ -208,7 +208,8 @@ Outcome selection happens at defined decision points (**ignition** and
 Each environment is a **seeded generator** implementing a common interface. Given
 a seed, it produces:
 
-- A **scene contribution:** terrain mesh + props (Three.js), built in `world/`.
+- A **scene contribution:** blocky tiled terrain + props (Three.js), built in
+  `world/` (see the world systems in section 9).
 - A **params bundle** (pure data, no Three.js): ground height at origin, wind
   profile (base speed/direction + gust), world bounds, and an optional target
   landing zone for challenges.
@@ -245,7 +246,24 @@ is owned by the environment's `params` (there is no separate wind field on
 
 ## 9. Rendering (`world/`)
 
-- **Style:** low-poly, flat/gradient shading, cohesive palette. No textures/PBR.
+- **Style:** blocky/Minecraft-like, flat/gradient shading, cohesive palette.
+  No textures/PBR.
+- **Terrain:** per-environment palettes paint a tiled ground (vertex-colored
+  quads, one draw call) over a large base disc so the horizon reads endless.
+  Heights come from a pure seeded heightmap (`heightmap.ts`): two-octave value
+  noise quantized into terraces, forced-flat clearance discs around the pad,
+  target zone and water basins, and an edge fade into the base disc. Props,
+  flora, and creatures sample the same tile-snapped height so everything sits
+  exactly on the rendered surface.
+- **World systems:** animated scenery implements `WorldSystem`
+  (`update(dt, elapsed)` / `dispose()`) and is registered by each environment:
+  ambient day/night lighting + fog (`ambient.ts`, driven by pure `daynight.ts`
+  math), a sky dome with square sun/moon and stars (`sky.ts`), drifting cloud
+  slabs (`clouds.ts`), swaying trees/shrubs/grass/flowers (`vegetation.ts`),
+  wandering villagers/animals and circling birds (`creatures.ts`), shimmering
+  blocky water (`water.ts`), and rain/snow/thunderstorm particles
+  (`weatherFx.ts`, rolled from biome weights). The day/night clock persists
+  across world rebuilds and is not scaled by simulation speed.
 - **Rocket mesh:** generated procedurally from the rocket's `look` params
   (body cylinder, nose cone, fins, colors) in `rocketMesh.ts`.
 - **Effects:** particle-ish flame/smoke during boost, parachute canopy on
