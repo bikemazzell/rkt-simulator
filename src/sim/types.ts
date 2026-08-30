@@ -11,6 +11,8 @@ export interface Motor {
   massTotalKg: number;
   massPropKg: number;
   delayS: number;
+  /** Novelty: if set, a violent random lateral kick at ignition (m/s). */
+  chaos?: number;
 }
 
 export interface RocketLook {

@@ -38,6 +38,16 @@ export function applyOutcome(
       state.outcome = 'cato';
       return;
     }
+    const chaos = config.motor.chaos ?? 0;
+    if (chaos > 0) {
+      // Novelty motor that survived ignition: hurl it off in a semi-random
+      // direction. The (huge) thrust still lifts it, so it screams up and away.
+      state.outcome = 'tip-off';
+      const angle = randRange(rng, 0, Math.PI * 2);
+      const speed = randRange(rng, chaos * 0.5, chaos);
+      state.velocity = { x: Math.cos(angle) * speed, y: state.velocity.y, z: Math.sin(angle) * speed };
+      return;
+    }
     if (rng() < tipOffProbability(config)) {
       state.outcome = 'tip-off';
       // Seeded lateral kick; persists into flight as an angled, drifting path.

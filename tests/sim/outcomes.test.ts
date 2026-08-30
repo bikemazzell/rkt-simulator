@@ -73,6 +73,24 @@ describe('outcomes', () => {
     expect(tipOffProbability(windy)).toBeGreaterThan(tipOffProbability(calm));
   });
 
+  it('a chaos motor that survives ignition gets a large random lateral kick', () => {
+    const chaosMotor = { ...makeTestConfig().motor, id: 'Bye Bye Legs', totalImpulseNs: 1200, avgThrustN: 300, burnTimeS: 4, chaos: 45 };
+    let launched = false;
+    for (let seed = 0; seed < 100; seed++) {
+      const config = makeTestConfig({ seed, motor: chaosMotor });
+      const s = initialFlightState(config);
+      applyOutcome(s, config, mulberry32(seed), 'ignition');
+      if (s.outcome !== 'cato') {
+        launched = true;
+        const lateral = Math.hypot(s.velocity.x, s.velocity.z);
+        expect(s.outcome).toBe('tip-off');
+        expect(lateral).toBeGreaterThan(20); // chaos 45 -> kick in [22.5, 45]
+        break;
+      }
+    }
+    expect(launched).toBe(true); // ~10% of seeds survive the 90% CATO
+  });
+
   it('is deterministic for a fixed seed', () => {
     const config = makeTestConfig({ seed: 5, motor: { ...makeTestConfig().motor, totalImpulseNs: 40 } });
     const a = initialFlightState(config); applyOutcome(a, config, mulberry32(5), 'ignition');

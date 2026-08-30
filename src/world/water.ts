@@ -9,7 +9,7 @@ import type { WorldSystem } from './system';
  * open sea stays cheap.
  */
 
-export const WATER_PALETTE = [0x2a6099, 0x35709f, 0x4385b8, 0x5496c4];
+export const WATER_PALETTE = [0x3f76e4, 0x4b84ea, 0x3568c9, 0x5a92f0];
 const SOAPY_PALETTE = [0x7ec8e3, 0x8fd4ea, 0x6db8d8, 0x9fdcee];
 
 const GRID_CAP = 64;

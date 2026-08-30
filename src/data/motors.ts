@@ -47,6 +47,7 @@ export const motors: Motor[] = [
   { id: "F15-4", class: "F", totalImpulseNs: 60, avgThrustN: 15, burnTimeS: 4, massTotalKg: 0.09, massPropKg: 0.06, delayS: 4 },
   { id: "F15-6", class: "F", totalImpulseNs: 60, avgThrustN: 15, burnTimeS: 4, massTotalKg: 0.09, massPropKg: 0.06, delayS: 6 },
   { id: "F15-8", class: "F", totalImpulseNs: 60, avgThrustN: 15, burnTimeS: 4, massTotalKg: 0.09, massPropKg: 0.06, delayS: 8 },
+  { id: "Bye Bye Legs", class: "G", totalImpulseNs: 1200, avgThrustN: 300, burnTimeS: 4, massTotalKg: 0.3, massPropKg: 0.2, delayS: 2, chaos: 45 },
 ];
 
 export function motorById(id: string): Motor | undefined {
