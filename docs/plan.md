@@ -2686,3 +2686,37 @@ in Task 17. `Outcome`, `FlightPhase`, `EnvParams` defined once in Task 2.
 - Task 18 CDP smoke implemented as a dependency-free raw-CDP script
   (`scripts/smoke-cdp.mjs`) using Node's global `fetch` + `WebSocket`; run Brave
   with `--headless=new --remote-debugging-port=9222` and `vite preview` first.
+
+## Post-implementation changes (interactive playtest, 2026-08-30)
+
+Fixes and features added after the plan was executed, while playtesting the
+running app (all committed; each verified with tests and/or Brave CDP):
+
+- **Click-blocking overlay:** the hidden summary's `display:flex` class overrode
+  the `hidden` attribute, so a full-screen overlay ate all clicks (`.rkt-summary[hidden]`
+  and `.rkt-body[hidden]` now force `display:none`). CDP smoke hardened to
+  hit-test the Launch button.
+- **Pre-launch preview:** the selected environment + rocket on the pad render
+  immediately and on selection change (scene never starts black).
+- **Explosion/outcome bug:** the rocket retained spent-motor-casing mass, so
+  tumble recovery landed >15 m/s and `phase='failed'` paired with a leftover
+  `outcome='nominal'` (explosion + "nominal" summary). Landing now keeps phase
+  and outcome consistent; tumble/streamer drag raised so a nominal streamer
+  recovery lands soft. Summary is delayed on crash/CATO so the blast shows.
+- **Explosion visual:** burst of red/orange/yellow/white spheres (was near-
+  invisible point particles).
+- **Camera:** rigid zero-lag follow (tracks at any altitude, preserves user
+  scroll-zoom, no jitter); orbit mode gains continuous held-key **WASD** pan and
+  **Q/E** vertical movement.
+- **Simulation speed** control (1x/4x/16x, key `F`) so parachute descents aren't
+  tedious.
+- **Launch pad** at the origin with a clearance radius so props never spawn on
+  the rocket; z-fighting removed (pad top no longer coplanar with the ground
+  disc; ground disc sits a hair below the surface).
+- **Rooftop** rebuilt: street ground far below, house roof is the launch surface
+  (removes the roof/ground coplanar z-fighting).
+- **Chute** placed above the nose tip of any-length rocket (Mean Machine fix).
+- **HUD altitude** shown above ground (correct on elevated terrain).
+- **Mobile:** control panel is collapsible and scrolls within the viewport.
+- **Deploy:** GitHub Actions workflow builds and publishes `dist/` to GitHub
+  Pages on push to `main` (`.github/workflows/deploy.yml`).

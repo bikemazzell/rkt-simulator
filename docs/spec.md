@@ -261,12 +261,19 @@ is owned by the environment's `params` (there is no separate wind field on
 DOM overlay (not in-canvas) for simplicity:
 
 - Rocket selector (with a small spec readout), motor selector (filtered to the
-  rocket's compatible motors), environment selector.
-- Launch / Reset / Mute buttons; camera-mode toggle.
-- Live HUD: altitude, vertical velocity, current apogee, flight status/phase.
+  rocket's compatible motors, or the full list when **allow any motor** is
+  ticked — which lets the player overload a rocket and trigger a CATO),
+  environment selector.
+- Launch / Reset / Mute buttons; camera-mode toggle; simulation-speed toggle.
+- Live HUD: altitude (above ground), vertical velocity, current apogee, flight
+  status/phase.
 - Post-flight summary: apogee, max velocity, flight time, outcome, drift
-  distance, and (if a challenge was active) the score.
+  distance, and (if a challenge was active) the score. On a crash/CATO the
+  summary is delayed briefly so the explosion plays first.
 - Optional challenge panel (choose challenge type + parameters before launch).
+- The control panel is **collapsible** (header toggle) and **scrolls within the
+  viewport** (`max-height` + `overflow-y`), so it stays usable on small and
+  landscape-mobile screens without covering the view.
 
 ## 11. Audio (`audio/`)
 
