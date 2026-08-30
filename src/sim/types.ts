@@ -1,6 +1,6 @@
 export interface Vec3 { x: number; y: number; z: number; }
 
-export type MotorClass = 'A' | 'B' | 'C' | 'D' | 'E';
+export type MotorClass = '1/8A' | '1/4A' | '1/2A' | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G';
 
 export interface Motor {
   id: string;

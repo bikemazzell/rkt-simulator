@@ -31,6 +31,22 @@
 /* The class sets display:flex, which would otherwise override `hidden`. */
 .rkt-body[hidden] { display: none; }
 
+/* Type-ahead combobox. The list is in normal flow (not absolute) so the
+   scrollable panel never clips it; it scrolls internally when long. */
+.rkt-combo { position: relative; }
+.rkt-combo-list {
+  margin-top: 3px;
+  max-height: min(220px, 40vh);
+  overflow-y: auto;
+  background: #0e1218;
+  border: 1px solid #2a323d;
+  border-radius: 6px;
+}
+.rkt-combo-list[hidden] { display: none; }
+.rkt-combo-item { padding: 6px 8px; cursor: pointer; font-size: 13px; }
+.rkt-combo-item:hover, .rkt-combo-item.is-active { background: #2d3a49; }
+.rkt-combo-empty { padding: 6px 8px; opacity: 0.6; font-size: 12px; }
+
 @media (max-width: 640px) {
   .rkt-panel { width: min(230px, 68vw); padding: 10px; font-size: 12px; }
   .rkt-hud { font-size: 11px; min-width: 150px; padding: 8px 10px; }

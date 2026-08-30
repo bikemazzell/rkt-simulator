@@ -3,6 +3,7 @@ import { rockets, compatibleMotors } from '../data/rockets';
 import { motors } from '../data/motors';
 import { environments } from '../world/environments';
 import { formatAltitude, formatSpeed, phaseLabel } from './format';
+import { Combo } from './combo';
 
 export interface UiHandlers {
   onLaunch(): void;
@@ -36,8 +37,8 @@ function option(value: string, label: string): HTMLOptionElement {
 }
 
 export class Ui {
-  private readonly rocketSel = el('select', 'rkt-select');
-  private readonly motorSel = el('select', 'rkt-select');
+  private readonly rocketCombo: Combo;
+  private readonly motorCombo: Combo;
   private readonly envSel = el('select', 'rkt-select');
   private readonly challengeSel = el('select', 'rkt-select');
   private readonly targetAltInput = el('input', 'rkt-input');
@@ -50,14 +51,16 @@ export class Ui {
   constructor(host: HTMLElement, private readonly handlers: UiHandlers) {
     const panel = el('div', 'rkt-panel');
 
-    for (const r of rockets) this.rocketSel.add(option(r.id, r.name));
+    this.rocketCombo = new Combo('Search rockets…', (id) => {
+      this.repopulateMotors();
+      this.handlers.onRocketChange(id);
+    });
+    this.motorCombo = new Combo('Search motors…', () => {});
+    this.rocketCombo.setOptions(rockets.map((r) => ({ value: r.id, label: r.name })));
+
     for (const e of environments) this.envSel.add(option(e.id, e.name));
     this.repopulateMotors();
 
-    this.rocketSel.addEventListener('change', () => {
-      this.repopulateMotors();
-      this.handlers.onRocketChange(this.rocketSel.value);
-    });
     this.envSel.addEventListener('change', () => this.handlers.onEnvChange(this.envSel.value));
 
     this.anyMotorChk.type = 'checkbox';
@@ -92,8 +95,8 @@ export class Ui {
 
     const body = el('div', 'rkt-body');
     body.append(
-      this.field('Rocket', this.rocketSel),
-      this.field('Motor', this.motorSel),
+      this.field('Rocket', this.rocketCombo.el),
+      this.field('Motor', this.motorCombo.el),
       anyLabel,
       this.field('Environment', this.envSel),
       this.field('Challenge', this.challengeSel),
@@ -135,12 +138,9 @@ export class Ui {
   }
 
   private repopulateMotors(): void {
-    const rocket = rockets.find((r) => r.id === this.rocketSel.value) ?? rockets[0];
+    const rocket = rockets.find((r) => r.id === this.rocketCombo.getValue()) ?? rockets[0];
     const list = this.anyMotorChk.checked ? motors : compatibleMotors(rocket);
-    const prev = this.motorSel.value;
-    this.motorSel.replaceChildren();
-    for (const m of list) this.motorSel.add(option(m.id, `${m.id} (${m.class})`));
-    if (list.some((m) => m.id === prev)) this.motorSel.value = prev;
+    this.motorCombo.setOptions(list.map((m) => ({ value: m.id, label: `${m.id} (${m.class})` })));
   }
 
   getSelection(): { rocketId: string; motorId: string; envId: string; challenge: ChallengeConfig } {
@@ -148,7 +148,7 @@ export class Ui {
     const challenge: ChallengeConfig = type === 'target-altitude'
       ? { type, targetAltitudeM: Number(this.targetAltInput.value) || 150, toleranceM: 50 }
       : { type };
-    return { rocketId: this.rocketSel.value, motorId: this.motorSel.value, envId: this.envSel.value, challenge };
+    return { rocketId: this.rocketCombo.getValue(), motorId: this.motorCombo.getValue(), envId: this.envSel.value, challenge };
   }
 
   updateHud(state: FlightState, groundHeight = 0): void {

@@ -11,6 +11,8 @@ import { buildTiledGround } from '../ground';
 import { buildVegetation } from '../vegetation';
 import { CloudSystem } from '../clouds';
 import { CreatureSystem } from '../creatures';
+import { BATHTUB_PALETTE, buildWater, type WaterSpec } from '../water';
+import { scatterPositions } from '../placement';
 
 function groundDisc(radius: number, color: number): THREE.Mesh {
   const geo = new THREE.CircleGeometry(radius, 48);
@@ -114,11 +116,24 @@ function critters(ctx: BuildContext, params: EnvParams, rng: Rng, biome: ReturnT
   return sys;
 }
 
+/** Build shimmering water bodies and register the repaint system. */
+function water(ctx: BuildContext, rng: Rng, specs: WaterSpec[]): void {
+  const sys = buildWater(ctx.root, rng, specs);
+  if (sys) ctx.registerSystem(sys);
+}
+
+/** Seeded off-centre spot for a pond/lake, clear of the pad. */
+function pondSpot(rng: Rng, minR: number, maxR: number): { x: number; z: number } {
+  return scatterPositions(rng, 1, { minR, maxR })[0];
+}
+
 function park(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('park');
   base(ctx, params, rng, biome.groundPalette);
   flora(ctx, params, rng, biome); // oaks + birches, shrubs, flowers, grass
   critters(ctx, params, rng, biome);
+  const spot = pondSpot(rng, 90, params.bounds.radius * 0.55); // pond away from the pad
+  water(ctx, rng, [{ radius: 32, x: spot.x, z: spot.z, y: params.groundHeight + 0.02 }]);
 }
 
 function urban(ctx: BuildContext, params: EnvParams, rng: Rng): void {
@@ -146,6 +161,8 @@ function mountain(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   }, rng, 200);
   flora(ctx, params, rng, biome); // pines on the lower slopes
   critters(ctx, params, rng, biome); // mountain goats + hawks
+  const lake = pondSpot(rng, 160, params.bounds.radius * 0.5); // alpine lake
+  water(ctx, rng, [{ radius: 65, x: lake.x, z: lake.z, y: g + 0.02 }]);
 }
 
 function desert(ctx: BuildContext, params: EnvParams, rng: Rng): void {
@@ -159,6 +176,12 @@ function sea(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('sea');
   const g = params.groundHeight;
   base(ctx, params, rng, biome.groundPalette, { pad: false, flat: true }); // the raft is the launch platform
+  // Far ocean sheet out to the fog so the horizon reads endless.
+  const far = groundDisc(3000, biome.groundPalette[0]);
+  far.position.y = g - 0.12;
+  ctx.root.add(far);
+  // Shimmering blocky sea just under the raft deck.
+  water(ctx, rng, [{ radius: params.bounds.radius, y: g - 0.02 }]);
   // Launch raft at the origin (top flush with water) so the rocket rests on it.
   ctx.root.add(box(16, 1, 16, 0x8a6d3b, 0, g - 0.5, 0));
   scatter(ctx, params, 8, (x, z) => box(3, 2, 8, 0xdddddd, x, g + 1, z), rng, 60); // distant boats
@@ -184,6 +207,8 @@ function bathtub(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const g = params.groundHeight;
   base(ctx, params, rng, biome.groundPalette);
   critters(ctx, params, rng, biome); // yellow rubber-duck patrols
+  // Bath water fills the tub up to the rim's lower half.
+  water(ctx, rng, [{ radius: 40, y: g + 2.5, palette: BATHTUB_PALETTE }]);
   // Tub rim.
   const rim = new THREE.Mesh(
     new THREE.TorusGeometry(45, 5, 12, 32),
@@ -214,6 +239,8 @@ function backyardDog(ctx: BuildContext, params: EnvParams, rng: Rng): void {
     ctx.root.add(box(1, 6, 1, 0x8b5a2b, Math.cos(a) * (params.bounds.radius - 5), g + 3, Math.sin(a) * (params.bounds.radius - 5)));
   }
   flora(ctx, params, rng, biome, { maxR: params.bounds.radius - 15 }); // hedges, flowers, grass
+  const birdbath = pondSpot(rng, 35, params.bounds.radius - 25); // small pond away from the pad
+  water(ctx, rng, [{ radius: 9, x: birdbath.x, z: birdbath.z, y: g + 0.02 }]);
   const creatureSys = critters(ctx, params, rng, biome);
   // An angry dog near the landing zone, head bobbing as it growls.
   const dog = new THREE.Group();
