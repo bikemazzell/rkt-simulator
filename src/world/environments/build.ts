@@ -8,6 +8,7 @@ import { SkySystem } from '../sky';
 import { DEFAULT_START_PHASE } from '../daynight';
 import { biomeFor } from '../biome';
 import { buildTiledGround } from '../ground';
+import { buildVegetation } from '../vegetation';
 
 function groundDisc(radius: number, color: number): THREE.Mesh {
   const geo = new THREE.CircleGeometry(radius, 48);
@@ -79,6 +80,16 @@ function base(ctx: BuildContext, params: EnvParams, rng: Rng, palette: number[],
   if (ctx.showTargetZone) markTargetZone(ctx.root, params);
 }
 
+/** Scatter the biome's flora and register its wind-sway system. */
+function flora(ctx: BuildContext, params: EnvParams, rng: Rng, biome: ReturnType<typeof biomeFor>, opts: { groundY?: number; minR?: number; maxR?: number } = {}): void {
+  const sway = buildVegetation(ctx.root, biome, rng, {
+    groundY: opts.groundY ?? params.groundHeight,
+    minR: opts.minR ?? LAUNCH_CLEARANCE,
+    maxR: opts.maxR ?? params.bounds.radius * 0.9,
+  });
+  if (sway) ctx.registerSystem(sway);
+}
+
 // Scatter props between `minR` (kept clear of the launch pad) and the bounds.
 function scatter(ctx: BuildContext, params: EnvParams, count: number, make: (x: number, z: number) => THREE.Object3D, rng: Rng, minR = LAUNCH_CLEARANCE): void {
   const inner = Math.max(minR, LAUNCH_CLEARANCE);
@@ -90,46 +101,40 @@ function scatter(ctx: BuildContext, params: EnvParams, count: number, make: (x: 
 }
 
 function park(ctx: BuildContext, params: EnvParams, rng: Rng): void {
-  const g = params.groundHeight;
-  base(ctx, params, rng, biomeFor('park').groundPalette);
-  scatter(ctx, params, 40, (x, z) => {
-    const tree = new THREE.Group();
-    tree.add(box(1, 4, 1, 0x6b4423, x, g + 2, z));
-    tree.add(cone(3, 6, 0x2e7d32, x, g + 7, z));
-    return tree;
-  }, rng);
+  const biome = biomeFor('park');
+  base(ctx, params, rng, biome.groundPalette);
+  flora(ctx, params, rng, biome); // oaks + birches, shrubs, flowers, grass
 }
 
 function urban(ctx: BuildContext, params: EnvParams, rng: Rng): void {
+  const biome = biomeFor('urban');
+  base(ctx, params, rng, biome.groundPalette);
   const g = params.groundHeight;
-  base(ctx, params, rng, biomeFor('urban').groundPalette);
   scatter(ctx, params, 60, (x, z) => {
     const h = randRange(rng, 15, 90);
     const w = randRange(rng, 8, 20);
     const shade = 0x445566 + randInt(rng, 0, 0x334455);
     return box(w, h, w, shade, x, g + h / 2, z);
   }, rng);
+  flora(ctx, params, rng, biome); // street trees in the gaps
 }
 
 function mountain(ctx: BuildContext, params: EnvParams, rng: Rng): void {
+  const biome = biomeFor('mountain');
+  base(ctx, params, rng, biome.groundPalette);
   const g = params.groundHeight;
-  base(ctx, params, rng, biomeFor('mountain').groundPalette);
   // Big footprints: push peaks well out so their bases never cover the pad.
   scatter(ctx, params, 30, (x, z) => {
     const h = randRange(rng, 60, 200);
     return cone(h * 0.45, h, 0x7a6f5a, x, g + h / 2, z);
   }, rng, 200);
+  flora(ctx, params, rng, biome); // pines on the lower slopes
 }
 
 function desert(ctx: BuildContext, params: EnvParams, rng: Rng): void {
-  const g = params.groundHeight;
-  base(ctx, params, rng, biomeFor('desert').groundPalette);
-  scatter(ctx, params, 18, (x, z) => {
-    const cactus = new THREE.Group();
-    cactus.add(box(1.2, 8, 1.2, 0x2f6b3a, x, g + 4, z));
-    cactus.add(box(4, 1.2, 1.2, 0x2f6b3a, x, g + 6, z));
-    return cactus;
-  }, rng);
+  const biome = biomeFor('desert');
+  base(ctx, params, rng, biome.groundPalette);
+  flora(ctx, params, rng, biome); // cacti + dry shrubs
 }
 
 function sea(ctx: BuildContext, params: EnvParams, rng: Rng): void {
@@ -141,14 +146,16 @@ function sea(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 }
 
 function rooftop(ctx: BuildContext, params: EnvParams, rng: Rng): void {
+  const biome = biomeFor('rooftop');
   const g = params.groundHeight;
   // Street level is far below; the house roof (top at g) is the launch surface.
-  base(ctx, params, rng, biomeFor('rooftop').groundPalette, { groundY: 0 });
+  base(ctx, params, rng, biome.groundPalette, { groundY: 0 });
   ctx.root.add(box(60, g, 60, 0xb5651d, 0, g / 2, 0)); // the house; roof top sits at g
   // A few rooftop fixtures, kept on the roof (well inside its ±30 footprint).
   ctx.root.add(box(6, 3, 6, 0x555555, -18, g + 1.5, 14));  // AC unit
   ctx.root.add(box(4, 4, 4, 0x555555, 15, g + 2, -12));    // vent block
   ctx.root.add(box(3, 6, 3, 0x777777, 20, g + 3, 18));     // chimney
+  flora(ctx, params, rng, biome, { groundY: g, minR: 8, maxR: 24 }); // planter hedges + tufts
 }
 
 function bathtub(ctx: BuildContext, params: EnvParams, rng: Rng): void {
@@ -174,14 +181,16 @@ function bathtub(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 }
 
 function backyardDog(ctx: BuildContext, params: EnvParams, rng: Rng): void {
+  const biome = biomeFor('backyard-dog');
   const g = params.groundHeight;
-  base(ctx, params, rng, biomeFor('backyard-dog').groundPalette);
+  base(ctx, params, rng, biome.groundPalette);
   // Fence ring.
   const posts = 24;
   for (let i = 0; i < posts; i++) {
     const a = (i / posts) * Math.PI * 2;
     ctx.root.add(box(1, 6, 1, 0x8b5a2b, Math.cos(a) * (params.bounds.radius - 5), g + 3, Math.sin(a) * (params.bounds.radius - 5)));
   }
+  flora(ctx, params, rng, biome, { maxR: params.bounds.radius - 15 }); // hedges, flowers, grass
   // An angry dog near the landing zone.
   const dog = new THREE.Group();
   dog.add(box(6, 3, 3, 0x7a4a1e, 0, g + 2.5, 0));   // body

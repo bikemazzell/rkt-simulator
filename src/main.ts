@@ -21,9 +21,10 @@ const sfx = new Sfx();
 const PREVIEW_SEED = 1; // stable, so the pre-launch scene does not jitter
 
 // Debug overrides for deterministic CDP verification: ?tod=<0..1> sets the
-// day/night start phase; ?cam=az,el,dist[,targetY] pins the orbit camera
-// (?weather arrives with the weather task).
+// day/night start phase; ?cam=az,el,dist[,targetY] pins the orbit camera;
+// ?env=<id> preselects the environment (?weather arrives with the weather task).
 const qs = new URLSearchParams(location.search);
+const envParam = qs.get('env');
 const todParam = qs.get('tod');
 const startPhase = todParam !== null && todParam !== '' && !Number.isNaN(Number(todParam))
   ? Number(todParam)
@@ -71,6 +72,7 @@ const ui = new Ui(host, {
   onEnvChange: showPreview,
   onCycleSpeed: cycleSpeed,
 });
+if (envParam !== null && envParam !== '') ui.setEnv(envParam);
 
 function clearRocket(): void {
   if (visual) { visual.dispose(); visual = null; }

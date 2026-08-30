@@ -127,6 +127,13 @@ export class Ui {
     return row;
   }
 
+  /** Preselect an environment (used by the ?env= debug override). */
+  setEnv(id: string): boolean {
+    const exists = Array.from(this.envSel.options).some((o) => o.value === id);
+    if (exists) this.envSel.value = id;
+    return exists;
+  }
+
   private repopulateMotors(): void {
     const rocket = rockets.find((r) => r.id === this.rocketSel.value) ?? rockets[0];
     const list = this.anyMotorChk.checked ? motors : compatibleMotors(rocket);
