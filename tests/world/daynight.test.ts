@@ -8,6 +8,7 @@ import {
   lightLevels,
   starAlpha,
   sunColor,
+  phaseAt,
 } from '../../src/world/daynight';
 
 const ch = (hex: number, shift: number) => (hex >> shift) & 255;
@@ -16,6 +17,26 @@ const green = (h: number) => ch(h, 8);
 const blue = (h: number) => ch(h, 0);
 
 describe('daynight', () => {
+  it('phaseAt advances with elapsed time and wraps within [0,1)', () => {
+    expect(phaseAt(0.1, 0)).toBeCloseTo(0.1, 10);
+    expect(phaseAt(0.1, DAY_LENGTH_SEC / 4)).toBeCloseTo(0.35, 10);
+    // Full day elapsed -> back to the start phase.
+    expect(phaseAt(0.1, DAY_LENGTH_SEC)).toBeCloseTo(0.1, 10);
+    // Many days later still lands in [0,1).
+    const p = phaseAt(0.3, DAY_LENGTH_SEC * 123.456);
+    expect(p).toBeGreaterThanOrEqual(0);
+    expect(p).toBeLessThan(1);
+  });
+
+  it('phaseAt stays in [0,1) even with start phases at or beyond the wrap point', () => {
+    for (const start of [0, 0.5, 0.999, 1, 7.25]) {
+      const p = phaseAt(start, DAY_LENGTH_SEC * 0.13);
+      expect(p).toBeGreaterThanOrEqual(0);
+      expect(p).toBeLessThan(1);
+    }
+    expect(phaseAt(0.9, DAY_LENGTH_SEC * 0.2)).toBeCloseTo(0.1, 10);
+  });
+
   it('sun sits on the horizon at sunrise/sunset, peaks at noon, bottoms at midnight', () => {
     expect(sunElevation(0)).toBeCloseTo(0, 2);
     expect(sunElevation(0.5)).toBeCloseTo(0, 2);

@@ -5,6 +5,11 @@
 export const DAY_LENGTH_SEC = 240;
 export const DEFAULT_START_PHASE = 0.1;
 
+/** Current cycle phase in [0,1) for a start phase and elapsed seconds. */
+export function phaseAt(startPhase: number, elapsed: number): number {
+  return (((startPhase + elapsed / DAY_LENGTH_SEC) % 1) + 1) % 1;
+}
+
 export interface SkyVec { x: number; y: number; z: number; }
 export interface SkyColors { top: number; horizon: number; }
 export interface LightLevels { hemi: number; sun: number; moon: number; }

@@ -21,11 +21,25 @@ const sfx = new Sfx();
 const PREVIEW_SEED = 1; // stable, so the pre-launch scene does not jitter
 
 // Debug overrides for deterministic CDP verification: ?tod=<0..1> sets the
-// day/night start phase (?weather arrives with the weather task).
-const todParam = new URLSearchParams(location.search).get('tod');
+// day/night start phase; ?cam=az,el,dist[,targetY] pins the orbit camera
+// (?weather arrives with the weather task).
+const qs = new URLSearchParams(location.search);
+const todParam = qs.get('tod');
 const startPhase = todParam !== null && todParam !== '' && !Number.isNaN(Number(todParam))
   ? Number(todParam)
   : undefined;
+const camParam = qs.get('cam');
+const camParts = camParam !== null && camParam !== ''
+  ? camParam.split(',').map(Number)
+  : null;
+function applyDebugCam(): void {
+  if (camParts && camParts.length >= 3 && camParts.slice(0, 3).every(Number.isFinite)) {
+    // Orbit mode, or the follow-cam would drag this view back to the rocket.
+    scene.setCameraMode('orbit');
+    cameraMode = 'orbit';
+    scene.setOrbitView(camParts[0], camParts[1], camParts[2], Number.isFinite(camParts[3]) ? camParts[3] : 10);
+  }
+}
 
 let sim: Simulation | null = null;
 let visual: RocketVisual | null = null;
@@ -75,6 +89,7 @@ function showPreview(): void {
 
   scene.clearWorld();
   scene.reset();
+  applyDebugCam();
   env.build(
     { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone', registerSystem: (sys) => scene.registerWorldSystem(sys), startPhase },
     params, mulberry32(PREVIEW_SEED),
@@ -102,6 +117,7 @@ function launch(): void {
 
   scene.clearWorld();
   scene.reset();
+  applyDebugCam();
   env.build(
     { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone', registerSystem: (sys) => scene.registerWorldSystem(sys), startPhase },
     params, mulberry32(seed),

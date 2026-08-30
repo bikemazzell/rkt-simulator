@@ -98,6 +98,23 @@ export class SceneManager {
     this.controls.update();
   }
 
+  /**
+   * Debug/verification helper: place the orbit camera deterministically.
+   * Azimuth degrees from +z towards +x; elevation degrees (negative places the
+   * camera below the target height, i.e. looking up); distance from target.
+   */
+  setOrbitView(azimuthDeg: number, elevationDeg: number, distance: number, targetY = 10): void {
+    const az = (azimuthDeg * Math.PI) / 180;
+    const el = (elevationDeg * Math.PI) / 180;
+    this.controls.target.set(0, targetY, 0);
+    this.camera.position.set(
+      Math.sin(az) * Math.cos(el) * distance,
+      targetY + Math.sin(el) * distance,
+      Math.cos(az) * Math.cos(el) * distance,
+    );
+    this.controls.update();
+  }
+
   render(rocketPos: Vec3): void {
     const dt = this.clock.getDelta();
     // Real-time ambient animation (day/night, clouds, creatures). Deliberately

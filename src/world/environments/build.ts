@@ -4,6 +4,7 @@ import type { EnvParams } from '../../sim/types';
 import { randRange, randInt, type Rng } from '../../sim/rng';
 import * as P from './params';
 import { AmbientSystem } from '../ambient';
+import { SkySystem } from '../sky';
 import { DEFAULT_START_PHASE } from '../daynight';
 import { biomeFor } from '../biome';
 import { buildTiledGround } from '../ground';
@@ -57,8 +58,11 @@ interface BaseOpts { pad?: boolean; groundY?: number; flat?: boolean; }
 function base(ctx: BuildContext, params: EnvParams, rng: Rng, palette: number[], opts: BaseOpts = {}): void {
   const { pad = true, groundY = params.groundHeight, flat = false } = opts;
   // Ambient presentation (day/night lights, background, fog) is owned by the
-  // AmbientSystem, registered here for every environment.
-  ctx.registerSystem(new AmbientSystem(ctx.scene, ctx.root, ctx.startPhase ?? DEFAULT_START_PHASE));
+  // AmbientSystem, registered here for every environment. The SkySystem adds
+  // the dome/sun/moon/stars on the same clock.
+  const startPhase = ctx.startPhase ?? DEFAULT_START_PHASE;
+  ctx.registerSystem(new AmbientSystem(ctx.scene, ctx.root, startPhase));
+  ctx.registerSystem(new SkySystem(ctx.root, startPhase, randInt(rng, 1, 2 ** 31 - 1)));
   if (flat) {
     // e.g. sea: open water covers the ground later; keep the simple disc
     const ground = groundDisc(params.bounds.radius, palette[0]);

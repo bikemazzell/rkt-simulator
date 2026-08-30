@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { WorldSystem } from './system';
 import {
   DEFAULT_START_PHASE,
-  DAY_LENGTH_SEC,
+  phaseAt,
   skyColors,
   lightLevels,
   sunDirection,
@@ -34,7 +34,7 @@ export class AmbientSystem implements WorldSystem {
   }
 
   update(_dt: number, elapsed: number): void {
-    const phase = (((this.startPhase + elapsed / DAY_LENGTH_SEC) % 1) + 1) % 1;
+    const phase = phaseAt(this.startPhase, elapsed);
     const sky = skyColors(phase);
     const lv = lightLevels(phase);
 
