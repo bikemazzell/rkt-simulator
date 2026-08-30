@@ -44,7 +44,7 @@
 .rkt-hud {
   position: fixed;
   bottom: 12px;
-  left: 12px;
+  right: 12px;
   padding: 12px 14px;
   background: rgba(16, 20, 28, 0.8);
   color: #e6ebf2;

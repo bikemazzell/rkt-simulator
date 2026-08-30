@@ -2671,3 +2671,18 @@ in Task 17. `Outcome`, `FlightPhase`, `EnvParams` defined once in Task 2.
 - Keyboard shortcuts (Space/C/M) wired in `main.ts` (spec §4.3, qwen; Task 17).
 - Removed unused `whoosh` SFX; fixed `c as any` in the catalog test; early-
   deployed chute now visible during coast/apogee (qwen; Tasks 15, 9, 14).
+
+**Implementation deltas (found while building, 2026-08-30):**
+- Toolchain versions bumped to current majors (three 0.185, TypeScript 7, Vite 8,
+  Vitest 4). TS7 required `src/vite-env.d.ts` for the CSS side-effect import, and
+  the CATO-on-pad guard checks `s.outcome === 'cato'` instead of the phase literal
+  (TS7 narrows the just-assigned `'boost'` literal).
+- `src/audio/sfx.ts` uses a typed `globalThis` cast rather than `any` for the
+  AudioContext lookup.
+- Added an inline data-URI favicon in `index.html` so the browser never requests
+  `/favicon.ico` (which otherwise 404s and fails the CDP smoke's no-error check).
+- HUD moved to bottom-right so it never overlaps the top-left control panel at
+  small window heights (verified via CDP screenshot).
+- Task 18 CDP smoke implemented as a dependency-free raw-CDP script
+  (`scripts/smoke-cdp.mjs`) using Node's global `fetch` + `WebSocket`; run Brave
+  with `--headless=new --remote-debugging-port=9222` and `vite preview` first.
