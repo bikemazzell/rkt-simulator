@@ -12,6 +12,7 @@ import { rocketById, compatibleMotors } from './data/rockets';
 import { motorById } from './data/motors';
 import { scoreChallenge } from './sim/challenge';
 import { mulberry32 } from './sim/rng';
+import { isWeatherKind } from './world/weather';
 import type { EnvParams, ChallengeConfig } from './sim/types';
 
 const host = document.getElementById('app')!;
@@ -22,9 +23,11 @@ const PREVIEW_SEED = 1; // stable, so the pre-launch scene does not jitter
 
 // Debug overrides for deterministic CDP verification: ?tod=<0..1> sets the
 // day/night start phase; ?cam=az,el,dist[,targetY] pins the orbit camera;
-// ?env=<id> preselects the environment (?weather arrives with the weather task).
+// ?env=<id> preselects the environment; ?weather=<kind> forces the weather.
 const qs = new URLSearchParams(location.search);
 const envParam = qs.get('env');
+const weatherParam = qs.get('weather');
+const weatherOverride = weatherParam !== null && isWeatherKind(weatherParam) ? weatherParam : undefined;
 const todParam = qs.get('tod');
 const startPhase = todParam !== null && todParam !== '' && !Number.isNaN(Number(todParam))
   ? Number(todParam)
@@ -98,7 +101,7 @@ function showPreview(): void {
   scene.reset();
   applyDebugCam();
   env.build(
-    { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone', registerSystem: (sys) => scene.registerWorldSystem(sys), startPhase },
+    { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone', registerSystem: (sys) => scene.registerWorldSystem(sys), startPhase, weather: weatherOverride },
     params, mulberry32(PREVIEW_SEED),
   );
 
@@ -126,7 +129,7 @@ function launch(): void {
   scene.reset();
   applyDebugCam();
   env.build(
-    { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone', registerSystem: (sys) => scene.registerWorldSystem(sys), startPhase },
+    { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone', registerSystem: (sys) => scene.registerWorldSystem(sys), startPhase, weather: weatherOverride },
     params, mulberry32(seed),
   );
 

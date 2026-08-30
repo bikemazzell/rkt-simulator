@@ -13,6 +13,9 @@ import { CloudSystem } from '../clouds';
 import { CreatureSystem } from '../creatures';
 import { BATHTUB_PALETTE, buildWater, type WaterSpec } from '../water';
 import { scatterPositions } from '../placement';
+import { pickWeather, type WeatherKind } from '../weather';
+import { WeatherSystem } from '../weatherFx';
+import type { Biome } from '../biome';
 
 function groundDisc(radius: number, color: number): THREE.Mesh {
   const geo = new THREE.CircleGeometry(radius, 48);
@@ -60,8 +63,9 @@ function launchPad(groundHeight: number): THREE.Mesh {
 
 interface BaseOpts { pad?: boolean; groundY?: number; flat?: boolean; }
 
-function base(ctx: BuildContext, params: EnvParams, rng: Rng, palette: number[], opts: BaseOpts = {}): void {
+function base(ctx: BuildContext, params: EnvParams, rng: Rng, biome: Biome, opts: BaseOpts = {}): void {
   const { pad = true, groundY = params.groundHeight, flat = false } = opts;
+  const palette = biome.groundPalette;
   // Ambient presentation (day/night lights, background, fog) is owned by the
   // AmbientSystem, registered here for every environment. The SkySystem adds
   // the dome/sun/moon/stars on the same clock.
@@ -69,6 +73,16 @@ function base(ctx: BuildContext, params: EnvParams, rng: Rng, palette: number[],
   ctx.registerSystem(new AmbientSystem(ctx.scene, ctx.root, startPhase));
   ctx.registerSystem(new SkySystem(ctx.root, startPhase, randInt(rng, 1, 2 ** 31 - 1)));
   ctx.registerSystem(new CloudSystem(ctx.root, rng, { x: params.wind.base.x, z: params.wind.base.z }));
+  // Weather: forced via ?weather= for CDP shots, otherwise rolled from the
+  // biome weights with the scene seed. Registered after AmbientSystem so the
+  // fog it tightens already exists.
+  const weatherKind: WeatherKind = ctx.weather ?? pickWeather(biome.weather, rng);
+  if (weatherKind !== 'clear') {
+    ctx.registerSystem(new WeatherSystem(ctx.root, ctx.scene, weatherKind, rng, {
+      groundY: opts.groundY ?? params.groundHeight,
+      wind: { x: params.wind.base.x, z: params.wind.base.z },
+    }));
+  }
   if (flat) {
     // e.g. sea: open water covers the ground later; keep the simple disc
     const ground = groundDisc(params.bounds.radius, palette[0]);
@@ -129,7 +143,7 @@ function pondSpot(rng: Rng, minR: number, maxR: number): { x: number; z: number 
 
 function park(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('park');
-  base(ctx, params, rng, biome.groundPalette);
+  base(ctx, params, rng, biome);
   flora(ctx, params, rng, biome); // oaks + birches, shrubs, flowers, grass
   critters(ctx, params, rng, biome);
   const spot = pondSpot(rng, 90, params.bounds.radius * 0.55); // pond away from the pad
@@ -138,7 +152,7 @@ function park(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 
 function urban(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('urban');
-  base(ctx, params, rng, biome.groundPalette);
+  base(ctx, params, rng, biome);
   const g = params.groundHeight;
   scatter(ctx, params, 60, (x, z) => {
     const h = randRange(rng, 15, 90);
@@ -152,7 +166,7 @@ function urban(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 
 function mountain(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('mountain');
-  base(ctx, params, rng, biome.groundPalette);
+  base(ctx, params, rng, biome);
   const g = params.groundHeight;
   // Big footprints: push peaks well out so their bases never cover the pad.
   scatter(ctx, params, 30, (x, z) => {
@@ -167,7 +181,7 @@ function mountain(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 
 function desert(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('desert');
-  base(ctx, params, rng, biome.groundPalette);
+  base(ctx, params, rng, biome);
   flora(ctx, params, rng, biome); // cacti + dry shrubs
   critters(ctx, params, rng, biome); // villager + critters + vultures
 }
@@ -175,7 +189,7 @@ function desert(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 function sea(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('sea');
   const g = params.groundHeight;
-  base(ctx, params, rng, biome.groundPalette, { pad: false, flat: true }); // the raft is the launch platform
+  base(ctx, params, rng, biome, { pad: false, flat: true }); // the raft is the launch platform
   // Far ocean sheet out to the fog so the horizon reads endless.
   const far = groundDisc(3000, biome.groundPalette[0]);
   far.position.y = g - 0.12;
@@ -192,7 +206,7 @@ function rooftop(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('rooftop');
   const g = params.groundHeight;
   // Street level is far below; the house roof (top at g) is the launch surface.
-  base(ctx, params, rng, biome.groundPalette, { groundY: 0 });
+  base(ctx, params, rng, biome, { groundY: 0 });
   ctx.root.add(box(60, g, 60, 0xb5651d, 0, g / 2, 0)); // the house; roof top sits at g
   // A few rooftop fixtures, kept on the roof (well inside its ±30 footprint).
   ctx.root.add(box(6, 3, 6, 0x555555, -18, g + 1.5, 14));  // AC unit
@@ -205,7 +219,7 @@ function rooftop(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 function bathtub(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('bathtub');
   const g = params.groundHeight;
-  base(ctx, params, rng, biome.groundPalette);
+  base(ctx, params, rng, biome);
   critters(ctx, params, rng, biome); // yellow rubber-duck patrols
   // Bath water fills the tub up to the rim's lower half.
   water(ctx, rng, [{ radius: 40, y: g + 2.5, palette: BATHTUB_PALETTE }]);
@@ -231,7 +245,7 @@ function bathtub(ctx: BuildContext, params: EnvParams, rng: Rng): void {
 function backyardDog(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('backyard-dog');
   const g = params.groundHeight;
-  base(ctx, params, rng, biome.groundPalette);
+  base(ctx, params, rng, biome);
   // Fence ring.
   const posts = 24;
   for (let i = 0; i < posts; i++) {
