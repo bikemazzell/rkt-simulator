@@ -51,16 +51,39 @@ function markTargetZone(root: THREE.Group, params: EnvParams): void {
 // mountains) ever spawns on top of the rocket.
 const LAUNCH_CLEARANCE = 30;
 
-function launchPad(groundHeight: number): THREE.Mesh {
-  // True-scale launch plate: 3.2 m across, 6 cm thick — big enough for the
-  // reference lineup's blast deflector, thin enough not to bury the rocket.
-  const pad = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.6, 1.6, 0.06, 20),
+function launchPad(groundHeight: number): THREE.Group {
+  const pad = new THREE.Group();
+  // True-scale pad plate: 3.2 m across, barely proud of the ground (top at
+  // +5 mm) so the rocket's fins never sink into it, while the offset keeps
+  // the top face off the terrain disc (no coplanar z-fighting).
+  const plate = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.6, 1.6, 0.02, 24),
     new THREE.MeshLambertMaterial({ color: 0x30343a }),
   );
-  // Centred on the surface so its top face sits clearly ABOVE the ground disc
-  // (no coplanar faces -> no z-fighting); the bottom half is hidden below ground.
-  pad.position.set(0, groundHeight, 0);
+  plate.position.set(0, groundHeight - 0.005, 0);
+  pad.add(plate);
+
+  // Bullseye markings so the pad reads as a launch marker: red center dot,
+  // two white rings, and a crosshair through the middle. Unlit materials
+  // keep them crisp at any time of day; 1 mm above the plate avoids
+  // z-fighting with its top face.
+  const markY = groundHeight + 0.006;
+  const flat = (geo: THREE.BufferGeometry, color: number): THREE.Mesh => {
+    geo.rotateX(-Math.PI / 2);
+    return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color }));
+  };
+  const center = flat(new THREE.CircleGeometry(0.18, 24), 0xd94040);
+  center.position.set(0, markY, 0);
+  const ring1 = flat(new THREE.RingGeometry(0.55, 0.62, 32), 0xe8e8e8);
+  ring1.position.set(0, markY, 0);
+  const ring2 = flat(new THREE.RingGeometry(1.15, 1.24, 40), 0xe8e8e8);
+  ring2.position.set(0, markY, 0);
+  const barMat = new THREE.MeshBasicMaterial({ color: 0xe8e8e8 });
+  const barH = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.002, 0.07), barMat);
+  barH.position.set(0, markY + 0.001, 0);
+  const barV = barH.clone();
+  barV.rotation.y = Math.PI / 2;
+  pad.add(center, ring1, ring2, barH, barV);
   return pad;
 }
 

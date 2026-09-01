@@ -240,24 +240,31 @@ export function buildRefMesh(ref: ScaleRef): THREE.Group {
 }
 
 /**
- * Build the comparison lineup: 3–5 everyday objects in a row beside the pad,
- * plus a 1 m launch rod (orange safety tip, hex blast plate) next to the
+ * Build the comparison lineup: 3–5 everyday objects scattered in a tight ring
+ * around the pad, plus a 1 m launch rod with an orange safety tip next to the
  * rocket — a real pad fixture and a strong size cue.
  *
- * @param maxX optional row budget (+x extent, e.g. a raft edge); references
- *        whose row end would exceed it are dropped.
- * @param rng drives lineup variety; same seed → same row, new seed → new row.
+ * Objects face the rocket (spectator style). Each sits on a ring at radius
+ * 2.0–3.4 m plus its own half-length so nothing ever stands on the pad plate,
+ * with rejection sampling keeping objects apart and inside the environment
+ * budget. Most-relevant references place first, so the height brackets
+ * survive any drops under a tight budget.
+ *
+ * @param maxExtent optional |x|/|z| budget in metres (e.g. a raft edge);
+ *        references that cannot fit inside it are dropped.
+ * @param rng drives lineup variety; same seed → same scatter, new seed → new.
  */
 export function buildScaleLineup(
   rocket: Rocket,
   groundY: number,
-  maxX?: number,
+  maxExtent?: number,
   rng: Rng = Math.random,
 ): THREE.Group {
   const group = new THREE.Group();
   group.position.y = groundY;
 
-  // 1 m launch rod + blast plate hugging the rocket body.
+  // 1 m launch rod hugging the rocket body; the orange tip makes it read as
+  // pad hardware rather than a mystery stick.
   const bodyRadius = rocket.diameterM / 2;
   const rodX = bodyRadius + 0.06;
   const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1.0, 8), mat(0xc8ccd0));
@@ -266,40 +273,39 @@ export function buildScaleLineup(
   const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.06, 8), mat(0xff6a00));
   tip.position.set(rodX, 0.97, 0);
   tip.userData.isRodTip = true;
-  const blastPlate = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.02, 6), mat(0x3d3d42));
-  blastPlate.position.set(rodX, 0.01, 0);
-  blastPlate.userData.isBlastPlate = true;
-  group.add(rod, tip, blastPlate);
+  group.add(rod, tip);
 
   const total = totalHeightM(rocket);
-  const gap = 0.3;
-  const x0 = 1.4; // row starts beside the pad, clear of the rocket
 
-  const layoutEnd = (refs: ScaleRef[]) => {
-    let cursor = x0;
-    for (const ref of refs) cursor += ref.lengthM + gap;
-    return cursor - gap;
-  };
-
-  // Under a row budget, keep the most relevant references (nearest in
-  // log-height to the rocket) that fit — brackets survive, distant fills go.
   const candidates = pickReferences(total, rng).slice().sort(
     (a, b) => Math.abs(Math.log(total / a.heightM)) - Math.abs(Math.log(total / b.heightM)),
   );
-  const selected: ScaleRef[] = [];
-  for (const ref of candidates) {
-    const attempt = [...selected, ref].sort((a, b) => a.heightM - b.heightM);
-    if (maxX === undefined || layoutEnd(attempt) <= maxX) selected.push(ref);
-  }
-  selected.sort((a, b) => a.heightM - b.heightM);
 
-  let cursor = x0;
-  for (const ref of selected) {
-    const mesh = buildRefMesh(ref);
-    mesh.userData.refId = ref.id;
-    mesh.position.x = cursor + ref.lengthM / 2;
+  // Conservative footprint: a circle of the ref's half-length. Facing the
+  // rocket puts the long axis radial, so this circle bounds the real mesh.
+  interface Placed { ref: ScaleRef; x: number; z: number; r: number }
+  const placed: Placed[] = [];
+  for (const ref of candidates) {
+    const r = Math.max(0.25, ref.lengthM / 2);
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const angle = rng() * Math.PI * 2;
+      const dist = 2.0 + r + rng() * 1.4;
+      const x = Math.cos(angle) * dist;
+      const z = Math.sin(angle) * dist;
+      if (maxExtent !== undefined && (Math.abs(x) + r > maxExtent || Math.abs(z) + r > maxExtent)) continue;
+      if (placed.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + r + 0.2)) continue;
+      placed.push({ ref, x, z, r });
+      break;
+    }
+  }
+
+  for (const p of placed) {
+    const mesh = buildRefMesh(p.ref);
+    mesh.userData.refId = p.ref.id;
+    mesh.position.set(p.x, 0, p.z);
+    // Long axis is local +z; aim it at the rocket so every object "watches".
+    mesh.rotation.y = Math.atan2(-p.x, -p.z);
     group.add(mesh);
-    cursor += ref.lengthM + gap;
   }
 
   return group;

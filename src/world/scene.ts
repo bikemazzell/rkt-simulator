@@ -16,6 +16,8 @@ export class SceneManager {
   private readonly clock = new THREE.Clock();
   private readonly worldSystems: WorldSystem[] = [];
   private worldElapsed = 0;
+  /** Camera never dips below this height (the environment's pad plane). */
+  private groundFloor = 0;
 
   constructor(private readonly host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -31,6 +33,9 @@ export class SceneManager {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.minDistance = 1; // allow close inspection of true-scale (<2 m) rockets
+    // Orbit low for dramatic up-shots, but never deep underground (the hard
+    // ground-floor clamp in render() catches the rest).
+    this.controls.maxPolarAngle = Math.PI / 2 + 0.12;
     this.resize();
     window.addEventListener('resize', () => this.resize());
 
@@ -48,6 +53,9 @@ export class SceneManager {
   }
 
   setCameraMode(mode: CameraMode): void { this.mode = mode; }
+
+  /** Set the plane the camera may not sink below (the env's ground height). */
+  setGroundFloor(y: number): void { this.groundFloor = y; }
 
   private applyPan(dt: number): void {
     if (this.mode !== 'orbit' || this.heldKeys.size === 0) return;
@@ -70,6 +78,9 @@ export class SceneManager {
     move.normalize().multiplyScalar(speed * dt);
     this.camera.position.add(move);
     this.controls.target.add(move);
+    // Q/E panning must not drive the orbit target underground either.
+    const targetFloor = this.groundFloor + 0.15;
+    if (this.controls.target.y < targetFloor) this.controls.target.y = targetFloor;
   }
 
   registerWorldSystem(sys: WorldSystem): void {
@@ -140,6 +151,9 @@ export class SceneManager {
     // keeping the world around the rocket at any altitude.
     this.worldElapsed += dt;
     for (const sys of this.worldSystems) sys.update(dt, this.worldElapsed, this.camera.position);
+    // Never let orbit/pan/follow place the camera below the ground plane.
+    const minY = this.groundFloor + 0.12;
+    if (this.camera.position.y < minY) this.camera.position.y = minY;
     this.renderer.render(this.scene, this.camera);
   }
 

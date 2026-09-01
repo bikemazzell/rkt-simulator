@@ -5,6 +5,7 @@ import { environmentById } from './world/environments';
 import { makeParamsFor } from './world/environments/params';
 import { buildRocketMesh } from './world/rocketMesh';
 import { buildScaleLineup } from './world/scaleLineup';
+import { buildTargetAltitudeRing } from './world/targetRing';
 import { RocketVisual } from './world/effects';
 import { Simulation, DT } from './sim/simulation';
 import { Sfx } from './audio/sfx';
@@ -79,6 +80,7 @@ const ui = new Ui(host, {
   },
   onRocketChange: showPreview,
   onEnvChange: showPreview,
+  onChallengeChange: showPreview,
   onCycleSpeed: cycleSpeed,
 });
 if (envParam !== null && envParam !== '') ui.setEnv(envParam);
@@ -88,14 +90,22 @@ function clearRocket(): void {
   if (previewMesh) { scene.scene.remove(previewMesh); previewMesh = null; }
 }
 
-// Real-size reference lineup next to the rocket so its scale reads at a glance.
-// Constrained per environment: the sea raft is only 16m wide, the post-resize
-// rooftop slab ~26m; the bathtub's whole joke is giant scale, so skip it there.
-// A fresh seed per call rolls a different row of references every visit.
+// Real-size reference lineup scattered around the rocket so its scale reads
+// at a glance. Constrained per environment: the sea raft is only 16m wide,
+// the rooftop slab ~26m; the bathtub's whole joke is giant scale, so skip it
+// there. A fresh seed per call rolls a different set every visit.
 function addScaleLineup(envId: string, params: EnvParams, rocket: Rocket): void {
   if (envId === 'bathtub') return;
-  const maxX = envId === 'sea' ? 6.5 : envId === 'rooftop' ? 11 : undefined;
-  scene.worldGroup.add(buildScaleLineup(rocket, params.launchY ?? params.groundHeight, maxX, mulberry32(Date.now() >>> 0)));
+  const maxExtent = envId === 'sea' ? 6.5 : envId === 'rooftop' ? 11 : undefined;
+  scene.worldGroup.add(buildScaleLineup(rocket, params.launchY ?? params.groundHeight, maxExtent, mulberry32(Date.now() >>> 0)));
+}
+
+// Amber ring at the challenge target altitude so the player can see the
+// rocket pass through (and above) it.
+function addTargetRing(challenge: ChallengeConfig, params: EnvParams): void {
+  if (challenge.type !== 'target-altitude') return;
+  const alt = challenge.targetAltitudeM ?? 150;
+  scene.worldGroup.add(buildTargetAltitudeRing(alt, params.launchY ?? params.groundHeight));
 }
 
 // Render the selected environment with the rocket resting on the pad, before any
@@ -116,6 +126,8 @@ function showPreview(): void {
     params, mulberry32(PREVIEW_SEED),
   );
   addScaleLineup(env.id, params, rocket);
+  addTargetRing(sel.challenge, params);
+  scene.setGroundFloor(params.groundHeight);
 
   previewMesh = buildRocketMesh(rocket);
   previewMesh.position.set(0, params.launchY ?? params.groundHeight, 0);
@@ -145,6 +157,8 @@ function launch(): void {
     params, mulberry32(seed),
   );
   addScaleLineup(env.id, params, rocket);
+  addTargetRing(sel.challenge, params);
+  scene.setGroundFloor(params.groundHeight);
 
   sim = new Simulation({ rocket, motor, environment: params, seed, challenge: sel.challenge });
   const mesh = buildRocketMesh(rocket);

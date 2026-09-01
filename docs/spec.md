@@ -68,7 +68,9 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
 
 ### 4.3 Controls
 
-- Mouse drag / scroll: orbit + zoom the camera (OrbitControls).
+- Mouse drag / scroll: orbit + zoom the camera (OrbitControls). The polar angle
+  is capped just past horizontal and a hard ground-floor clamp keeps the camera
+  from ever sinking below the environment's ground plane.
 - Toggle **follow camera** vs **free orbit**. Follow is *rigid*: the orbit target
   tracks the rocket and the camera translates with it, so the rocket stays framed
   at any altitude while the user's own zoom and orbit angle are preserved.
@@ -77,19 +79,25 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
   distance).
 - **Speed** control cycles the simulation rate 1x / 4x / 16x so descents under
   parachute do not take real minutes.
-- A **launch pad** (a thin ⌀3.2 m blast plate with a 1 m launch rod) marks the
-  origin and the rocket rests on it; procedural props keep a clear radius
+- A **launch pad** marks the origin: a thin ⌀3.2 m plate (top barely proud of
+  the ground so the rocket's fins never sink into it) painted with a bullseye —
+  red centre dot, white rings, and a crosshair — plus a 1 m launch rod with an
+  orange safety tip beside the rocket. Procedural props keep a clear radius
   around the pad so nothing ever spawns on the rocket.
 - **True scale.** One world unit = one meter. The rocket mesh is generated at
-  its real catalogue size, flanked by a row of 3–5 everyday scale-reference
-  objects (from eraser, golf ball, and baseball through soda can, dog, sheep,
-  child, cow, car, and person up to horse, door, house, and elephant) chosen
-  per rocket from a 22-rung ladder: the nearest rungs below/above its height
-  always appear, and the remaining slots are drawn at random (seeded per
-  build) so every lineup differs. The launch rod is a 1 m rail with an orange
-  tip beside the pad. The lineup is environment-aware — clamped onto the sea
-  raft and the rooftop, skipped in the giant bathtub, where the joke scale
-  would break it.
+  its real catalogue size, surrounded by 3–5 everyday scale-reference objects
+  (from eraser, golf ball, and baseball through soda can, dog, sheep, child,
+  cow, car, and person up to horse, door, house, and elephant) chosen per
+  rocket from a 22-rung ladder: the nearest rungs below/above its height always
+  appear, and the remaining slots are drawn at random (seeded per build) and
+  **scattered in a ring around the pad**, each object turned to face the
+  rocket. The scatter is environment-aware — kept within the sea raft and the
+  rooftop slab, skipped in the giant bathtub, where the joke scale would break
+  it.
+- The **target-altitude challenge** paints an amber ring (with a faint disc and
+  a beacon line down to the pad) at the chosen altitude, so the player can see
+  the rocket pass through and above the target. It appears in the preview and
+  updates immediately when the challenge or altitude is edited.
 - Launch, Reset, Camera, Speed, and Mute buttons in the UI.
 - Keyboard: `Space` = launch/reset, `C` = toggle camera, `F` = cycle speed,
   `M` = mute, `WASD` = pan and `Q`/`E` = up/down (orbit mode).

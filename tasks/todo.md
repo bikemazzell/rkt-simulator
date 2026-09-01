@@ -278,3 +278,28 @@ docs touch-up → commit + push (Pages).
   worldGroup while camera matrices stayed fresh (controls.update composes
   them) — verify rAF ticks before trusting matrix reads; kill by exact pid,
   relaunch with the swiftshader headless flags.
+
+## Fix round 3 — user feedback (2026-09-01)
+
+1. **Rocket clips pad (fins hidden)**: plate top = g+0.03 vs rocket base g. Fix: plate h 0.02 centered g-0.005 → top g+0.005 (5mm proud, z-fight-free at these depths); fins sink 5mm not 3cm; no sim/HUD changes.
+2. **Bullseye pad**: launchPad → Group: plate + unlit markings (red center dot r0.18, white rings r0.55-0.62 + r1.15-1.24, crosshair bars 2.6×0.07 through center) at plate top +1mm. MeshBasicMaterial.
+3. **Scatter refs around rocket** (not a row): ring placement r ∈ [2.0+R, 3.4+R], R = lengthM/2, facing rocket (yaw atan2(-x,-z)), pairwise dist ≥ Ra+Rb+0.2, extent |x|+R,|z|+R ≤ maxExtent (rename maxX), 60 rejection tries then drop (relevance order keeps brackets). Remove hex blastPlate (bullseye pad replaces).
+4. **Camera floor**: SceneManager.setGroundFloor(y) (default 0); controls.maxPolarAngle = π/2+0.12; applyPan clamps target.y ≥ floor+0.15; render() clamps camera.y ≥ floor+0.12 after controls.update(). main.ts: setGroundFloor(params.groundHeight) after both env.build.
+5. **Target-altitude ring**: new world/targetRing.ts buildTargetAltitudeRing(alt, baseY): amber torus r9 flat at baseY+alt, faint disc, beacon line pad→ring. Added to worldGroup in showPreview+launch when challenge=target-altitude; UI challengeSel/targetAltInput change → onChallengeChange → showPreview.
+
+Order: scatter tests+impl → pad bullseye+plate → targetRing tests+impl+UI wiring → camera floor → quality → CDP verify → docs → commit/push/deploy.
+
+### Fix round 3 — verification (2026-09-01)
+
+- Quality gate: typecheck clean, 205/205 tests (4 new targetRing), build OK.
+- Live CDP probes (healthy swiftshader instance, rAF running):
+  - Plate top at +0.005 m → fins sink 5 mm max (was 30 mm); no sim changes.
+  - Bullseye markings present (red 0.18 dot, rings 0.62/1.24, crossbars);
+    pixel-verified in screenshot (red + 583 white marking px).
+  - Refs scattered in a ring (min dist 2.77 m ≥ 2.0), facing the pad; sea
+    refs all within 2.83 m of center (raft ±8).
+  - Camera forced to y=-5 clamps to floor+0.12 within one frame.
+  - Challenge select 'target-altitude' → amber ring appears at y=150 with
+    torus+disc+beacon, updates via onChallengeChange → showPreview.
+- Smoke: OK, no console errors (new probes also capture warnings: only the
+  pre-existing THREE.Clock deprecation notice).

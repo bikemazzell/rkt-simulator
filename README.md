@@ -11,14 +11,14 @@ procedural terrain.
   atmospheric drag, wind and gusts, tipping, parachute recovery, CATO and
   crash outcomes. Fixed-timestep integration (frame-rate independent).
 - **True real-world scale** — 1 world unit = 1 meter. Rockets render at their
-  catalogue size (0.27 m to 2.05 m), standing on a thin blast plate with a
-  1 m launch rod (orange tip), next to a row of everyday **scale-reference
-  objects** (baseball, wine bottle, dog, sheep, cow, car, person, house,
-  elephant…, 22 rungs) picked per rocket with a fresh random draw each time
-  so its real size reads at a glance. The rocket selector shows a human-scale
-  hint ("Height 41 cm — about as tall as a wine bottle"). Props, creatures,
-  and vegetation are real-sized to match (1.8 m villagers, 0.4 m grass,
-  brown cows, dark-faced sheep — and the backyard dog guards the pad).
+  catalogue size (0.27 m to 2.05 m) on a bullseye pad with a 1 m launch rod
+  (orange tip), surrounded by everyday **scale-reference objects**
+  (baseball, wine bottle, dog, sheep, cow, car, person, house, elephant…,
+  22 rungs) picked per rocket and **scattered in a ring around the pad** with
+  a fresh random draw each time. The rocket selector shows a human-scale hint
+  ("Height 41 cm — about as tall as a wine bottle"). Props, creatures, and
+  vegetation are real-sized to match (1.8 m villagers, 0.4 m grass, brown
+  cows, dark-faced sheep — and the backyard dog guards the pad).
 - **Real Estes catalogue** — rockets and motors scraped from the manufacturer
   specs, with type-ahead search and compatibility filtering (or overload a
   rocket and see what happens).
@@ -38,7 +38,8 @@ procedural terrain.
   - weather: rain, snow, thunderstorms with lightning and tightened fog
   - fading launch trail behind every flight, chute and burst effects
     scaled to the rocket
-- **Challenges** — target-altitude, target-landing-zone (scored) flights.
+- **Challenges** — target-altitude (with an amber altitude ring marking the
+  target in the sky), target-landing-zone (scored) flights.
 - **Audio** — lightweight synthesized SFX, muted by default.
 
 ## Controls

@@ -13,6 +13,7 @@ export interface UiHandlers {
   onToggleCamera(): void;
   onRocketChange(id: string): void;
   onEnvChange(id: string): void;
+  onChallengeChange(): void;
   onCycleSpeed(): number;
 }
 
@@ -65,6 +66,10 @@ export class Ui {
     this.repopulateMotors();
 
     this.envSel.addEventListener('change', () => this.handlers.onEnvChange(this.envSel.value));
+    // Challenge/target-altitude edits re-render the preview so the altitude
+    // ring marker appears/updates immediately.
+    this.challengeSel.addEventListener('change', () => this.handlers.onChallengeChange());
+    this.targetAltInput.addEventListener('change', () => this.handlers.onChallengeChange());
 
     this.anyMotorChk.type = 'checkbox';
     this.anyMotorChk.addEventListener('change', () => this.repopulateMotors());
