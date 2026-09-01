@@ -109,6 +109,15 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
   rocket is on the rail it is held at the pad (no lateral slide), and a ~90°
   aim with no vertical thrust component ends as a rail tip-off. **Reset**
   zeroes the aim; changing rocket, environment, or challenge preserves it.
+- **Flight attitude + relaunch.** The rocket model points along its velocity
+  vector while flying freely (weathercocking via a smoothed nose alignment in
+  `RocketVisual`), then hangs nose-up under the canopy once the chute is out;
+  the attitude freezes on landing. After a soft (`landed`) flight the gimbal
+  is rebuilt around the resting rocket — seeded from its resting orientation,
+  without the pad rod — so the player can re-aim. Launching again starts the
+  next flight from that exact spot: `SimConfig.launchOrigin` overrides the pad
+  origin, and the apogee baseline/HUD altitude are measured above it. Crashes
+  and Reset still produce a fresh pad launch.
 - Launch, Reset, Camera, Speed, and Mute buttons in the UI.
 - Keyboard: `Space` = launch/reset, `C` = toggle camera, `F` = cycle speed,
   `M` = mute, `WASD` = pan and `Q`/`E` = up/down (orbit mode).

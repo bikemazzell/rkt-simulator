@@ -95,6 +95,13 @@ export interface SimConfig {
    * up. The attitude stays fixed in world space for the whole flight.
    */
   initialDirection?: Vec3;
+  /**
+   * Explicit launch point in world space (e.g. relaunching from where a
+   * previous flight came to rest). When absent the flight starts at the pad
+   * origin (0, `launchY ?? groundHeight`, 0). The apogee baseline and rail
+   * hold use this point's height instead of the pad level.
+   */
+  launchOrigin?: Vec3;
 }
 
 export interface FlightSummary {

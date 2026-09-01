@@ -11,6 +11,13 @@ const EXPLOSION_LIFE = 1.3; // seconds
 const TRAIL_SECONDS = 1.5;
 const TRAIL_MAX = 256;
 
+// Attitude tracking: the nose follows the velocity vector while flying freely
+// (weathercocking) and points back up once the chute is out — the rocket hangs
+// nose-up from the canopy while descending.
+const ATTITUDE_RATE = 5;          // slerp responsiveness, 1/s
+const ATTITUDE_MIN_SPEED = 1.5;   // m/s below which there is no direction to follow
+const UP = new THREE.Vector3(0, 1, 0);
+
 interface Debris { mesh: THREE.Mesh; vel: THREE.Vector3; }
 
 export class RocketVisual {
@@ -27,6 +34,10 @@ export class RocketVisual {
   private readonly trailTimes: number[] = [];
   private readonly trailPts: number[] = [];
   private trailCount = 0;
+  private lastAttitudeTime: number | null = null;
+
+  /** The rocket group this visual animates (its position/attitude are driven by update()). */
+  get flightMesh(): THREE.Group { return this.rocket; }
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -70,10 +81,33 @@ export class RocketVisual {
     }
     this.chute.visible = state.chuteDeployed &&
       (state.phase === 'coast' || state.phase === 'apogee' || state.phase === 'descent');
+    this.updateAttitude(state);
     if ((state.phase === 'failed' || state.outcome === 'cato') && !this.exploded) {
       this.explode();
     }
     if (this.explosion) this.animateExplosion();
+  }
+
+  /**
+   * Point the nose along the direction of travel: while thrusting/coasting the
+   * rocket weathercocks into the airflow (velocity-aligned), and once the chute
+   * is out it hangs nose-up under the canopy. Before liftoff the launch-aim
+   * tilt is kept; after landing the last attitude is frozen.
+   */
+  private updateAttitude(state: FlightState): void {
+    if (!state.liftedOff || state.phase === 'landed' || state.phase === 'failed') return;
+    const v = state.velocity;
+    const speed = Math.hypot(v.x, v.y, v.z);
+    if (speed < ATTITUDE_MIN_SPEED) return;
+    const dt = this.lastAttitudeTime === null ? 0 : Math.max(0, state.time - this.lastAttitudeTime);
+    this.lastAttitudeTime = state.time;
+    if (dt <= 0) return; // sim clock frozen between steps — nothing new to track
+
+    const target = new THREE.Vector3(v.x / speed, v.y / speed, v.z / speed);
+    if (state.chuteDeployed) target.set(0, 1, 0); // hang nose-up from the canopy
+    const desired = new THREE.Quaternion().setFromUnitVectors(UP, target);
+    const k = 1 - Math.exp(-ATTITUDE_RATE * dt);
+    this.rocket.quaternion.slerp(desired, k);
   }
 
   explode(): void {

@@ -45,13 +45,18 @@ export class Simulation {
     if (this.done) return;
     const s = this.state;
     const { rocket, motor, environment } = this.config;
-    const ground = environment.launchY ?? environment.groundHeight;
+    // Base level for the rail hold, liftoff compare, and the apogee baseline:
+    // the pad level normally, or the explicit launch origin's height when
+    // relaunching from a resting spot above/below the pad.
+    const origin = this.config.launchOrigin;
+    const base = origin !== undefined && Number.isFinite(origin.y)
+      ? origin.y
+      : environment.launchY ?? environment.groundHeight;
     // Landing surface follows the rendered terrain when the environment
     // provides a sampler, so rockets drifting over hills rest ON the hill,
-    // not at pad level inside it. Pad support and the apogee baseline keep
-    // the flat pad level (apogee is measured above the launch site).
+    // not at pad level inside it.
     const sampled = this.config.groundAt?.(s.position.x, s.position.z);
-    const surface = sampled !== undefined && Number.isFinite(sampled) ? sampled : ground;
+    const surface = sampled !== undefined && Number.isFinite(sampled) ? sampled : base;
 
     if (s.phase === 'idle') {
       s.phase = 'boost';
@@ -89,15 +94,15 @@ export class Simulation {
     // launch rail pins it horizontally until the vertical thrust component
     // actually lifts it (a 90° aim therefore ends in a pad tip-off).
     if (!s.liftedOff) {
-      if (s.position.y > ground) {
+      if (s.position.y > base) {
         s.liftedOff = true;
       } else {
-        s.position = vec(this.launchPos.x, ground, this.launchPos.z);
+        s.position = vec(this.launchPos.x, base, this.launchPos.z);
         s.velocity = vec(0, s.velocity.y < 0 ? 0 : s.velocity.y, 0);
       }
     }
 
-    s.apogee = Math.max(s.apogee, s.position.y - ground);
+    s.apogee = Math.max(s.apogee, s.position.y - base);
     s.maxSpeed = Math.max(s.maxSpeed, length(s.velocity));
 
     const nextPhase = advancePhase(s, motor);

@@ -18,7 +18,7 @@ import { motorById } from './data/motors';
 import { scoreChallenge } from './sim/challenge';
 import { mulberry32 } from './sim/rng';
 import { isWeatherKind } from './world/weather';
-import { MathUtils, type Object3D } from 'three';
+import { Euler, MathUtils, type Object3D } from 'three';
 import type { EnvParams, ChallengeConfig, Rocket } from './sim/types';
 
 const host = document.getElementById('app')!;
@@ -207,15 +207,30 @@ function showPreview(): void {
   previewMesh.position.set(0, params.launchY ?? params.groundHeight, 0);
   scene.scene.add(previewMesh);
 
+  attachGimbalAt(previewMesh, true);
+
+  groundHeight = params.launchY ?? params.groundHeight;
+  finished = false;
+  ui.setLaunchEnabled(true);
+  ui.hideSummary();
+}
+
+// Build the attitude gimbal around `target` (pad preview rocket or a landed
+// rocket being re-aimed). Shared by the pad preview and the post-landing
+// re-aim; `withRod` ties the pad's launch rail to the rings.
+function attachGimbalAt(target: Object3D, withRod: boolean): void {
   // Attitude gimbal: rings around the rocket base, labels + drag + exact
-  // angle input. The persisted aim restores the previous attitude.
-  gimbalGroup = buildGimbal(previewMesh.userData.topY ?? 1);
-  gimbalGroup.position.copy(previewMesh.position);
+  // angle input. `aim` is seeded beforehand (persisted attitude for the pad
+  // preview, or the resting orientation derived on landing).
+  gimbalGroup = buildGimbal(target.userData.topY ?? 1);
+  gimbalGroup.position.copy(target.position);
   scene.scene.add(gimbalGroup);
   gimbalCtl = new GimbalController(gimbalGroup);
-  gimbalCtl.applyTo(previewMesh);
-  const rod = findRodGroup();
-  if (rod) gimbalCtl.attachRod(rod);
+  gimbalCtl.applyTo(target);
+  if (withRod) {
+    const rod = findRodGroup();
+    if (rod) gimbalCtl.attachRod(rod);
+  }
   gimbalCtl.set('x', aim.x);
   gimbalCtl.set('y', aim.y);
   gimbalCtl.set('z', aim.z);
@@ -228,21 +243,43 @@ function showPreview(): void {
     lockControls: () => scene.setControlsEnabled(false),
     unlockControls: () => scene.setControlsEnabled(true),
   });
-
-  groundHeight = params.launchY ?? params.groundHeight;
-  finished = false;
-  ui.setLaunchEnabled(true);
-  ui.hideSummary();
 }
 
 function launch(): void {
+  // Relaunch from a successful landing: keep the world as-is and take off
+  // from where the rocket rests, pointing where the (rebuilt) gimbal aims.
+  // Crashes/reset never get here — those fall through to a fresh pad launch.
+  const relaunchFrom = sim && sim.done && sim.state.phase === 'landed' && visual
+    ? { ...sim.state.position }
+    : null;
+  const prevMesh = relaunchFrom && visual ? visual.flightMesh : null;
   clearRocket();
   clearGimbal();
+  if (summaryTimer) { clearTimeout(summaryTimer); summaryTimer = null; } // a pending summary must not pop over the new flight
   const sel = ui.getSelection();
   const rocket = rocketById(sel.rocketId)!;
   const motor = motorById(sel.motorId) ?? compatibleMotors(rocket)[0];
   const env = environmentById(sel.envId)!;
   const seed = launchSeedOverride ?? (Date.now() >>> 0); // per-launch seed; drives all sim randomness deterministically
+
+  if (relaunchFrom && prevMesh && current) {
+    sim = new Simulation({
+      rocket, motor, environment: current.params, seed, challenge: current.challenge,
+      groundAt: launchGroundAt,
+      initialDirection: aimDirection(aim), // seeded from the resting attitude at finish()
+      launchOrigin: relaunchFrom,
+    });
+    visual = new RocketVisual(scene.scene, prevMesh, rocket); // fresh trail/flame around the same mesh
+    groundHeight = relaunchFrom.y; // HUD altitude above the resting spot
+    finished = false;
+    accumulator = 0;
+    last = performance.now();
+    sfx.play('launch');
+    ui.setLaunchEnabled(false);
+    ui.hideSummary();
+    return;
+  }
+
   const params = makeParamsFor(env.id, seed);
   current = { params, challenge: sel.challenge };
 
@@ -308,6 +345,19 @@ function finish(): void {
   // Let the explosion play before the summary covers the scene.
   if (summaryTimer) clearTimeout(summaryTimer);
   summaryTimer = setTimeout(() => ui.showSummary(summary), crashed ? 1300 : 400);
+
+  // After a soft landing the gimbal comes back at the resting spot so the
+  // next launch can be re-aimed; it seeds from the resting orientation
+  // (nose follows the descent, so usually upright under the chute).
+  if (sim.state.phase === 'landed' && visual) {
+    const e = new Euler().setFromQuaternion(visual.flightMesh.quaternion, 'XYZ');
+    aim = normalizeAim({
+      x: MathUtils.radToDeg(e.x),
+      y: MathUtils.radToDeg(e.y),
+      z: MathUtils.radToDeg(e.z),
+    });
+    attachGimbalAt(visual.flightMesh, false); // no rail away from the pad
+  }
 }
 
 window.addEventListener('keydown', (e) => {

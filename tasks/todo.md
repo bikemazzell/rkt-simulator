@@ -498,3 +498,21 @@ calls) — fixed by capturing the normalized target first.
 
 Smoke: OK, no console errors. Docs synced (README feature bullet; spec §4.3
 gimbal + ?seed= overrides, §7.1 initialDirection, §9 gizmo/aim modules).
+
+## Fix round 6 — flight attitude, relaunch, post-landing gimbal — verification (2026-09-01)
+
+User reports: model never pointed along the trajectory (always launch-up);
+chute should hang nose-up; successful-landing Launch forgot the resting
+spot/orientation and the gizmo never came back after landing.
+
+- Quality gate: typecheck clean, 250/250 tests (38 files; +5 RocketVisual
+  attitude, +4 launchOrigin), build OK.
+- CDP probe /tmp/opencode/probe-round6.mjs (preview :4173, swiftshader
+  headless): boost nose·velDir dot = 1.000 exact; chute descent noseY = 1.0;
+  gizmo rebuilt at exact landing spot (110.05, 3, 12.48) with 3 labels;
+  relaunch climbs from the resting spot (apogee 2 above it), gizmo cleared
+  during flight; zero console errors; smoke OK.
+- Reviews: not re-reviewed (delta-only fixes on an already reviewed plan;
+  probe coverage was the gate).
+- Bonus bug fixed: pending summary toast could pop over a relaunch (timer
+  now cleared in launch()).

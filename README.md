@@ -26,7 +26,11 @@ procedural terrain.
   around the preview rocket set its launch direction. Drag a ring to tilt or
   spin (angle labels update live), double-click (or double-tap) to type an
   exact angle. The launch rod tilts with the rocket; a horizontal aim ends in
-  a rail tip-off. Reset zeroes the aim, changing rocket/env/challenge keeps it.
+  a rail tip-off. In flight the rocket weathercocks — the model points along
+  its direction of travel, nose-up again once the chute is out. After a soft
+  landing the gimbal reappears at the resting spot: press Launch to fly again
+  from exactly where it lies. Reset zeroes the aim, changing
+  rocket/env/challenge keeps it.
 - **Eight environments** — park, urban, mountain, desert, open sea, rooftop,
   plus two funny ones: a giant bathtub (launch off a rubber duck) and a
   backyard guarded by an angry dog.

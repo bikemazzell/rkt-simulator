@@ -63,3 +63,79 @@ describe('RocketVisual trail', () => {
     expect(scene.children.find((c) => c instanceof THREE.Line)).toBeUndefined();
   });
 });
+
+describe('RocketVisual attitude', () => {
+  const UP = new THREE.Vector3(0, 1, 0);
+
+  function noseDir(mesh: THREE.Object3D): THREE.Vector3 {
+    return UP.clone().applyQuaternion(mesh.quaternion);
+  }
+
+  function aimedState(time: number, v: { x: number; y: number; z: number }, over: Partial<FlightState> = {}): FlightState {
+    return { ...state(time, 10), velocity: { ...v }, ...over } as FlightState;
+  }
+
+  it('aligns the nose with the velocity vector during boost', () => {
+    const scene = new THREE.Scene();
+    const mesh = buildRocketMesh(data);
+    const visual = new RocketVisual(scene, mesh, data);
+    try {
+      // Two updates so the slerp has sim-time delta to converge.
+      visual.update(aimedState(1, { x: 10, y: 0, z: 0 }));
+      visual.update(aimedState(6, { x: 10, y: 0, z: 0 })); // 5 s gap → k ~ 1
+      const nose = noseDir(mesh);
+      expect(nose.x).toBeGreaterThan(0.999);
+      expect(Math.abs(nose.y)).toBeLessThan(0.05);
+    } finally { visual.dispose(); }
+  });
+
+  it('keeps the rail/aim tilt before liftoff', () => {
+    const scene = new THREE.Scene();
+    const mesh = buildRocketMesh(data);
+    const visual = new RocketVisual(scene, mesh, data);
+    try {
+      mesh.rotation.z = -Math.PI / 4; // 45° aim (negative z tilts the nose toward +X)
+      visual.update(aimedState(0.1, { x: 0, y: 0.2, z: 0 }, { liftedOff: false }));
+      const nose = noseDir(mesh);
+      expect(nose.x).toBeGreaterThan(0.65); // still tilted ~45°
+      expect(nose.y).toBeGreaterThan(0.65);
+    } finally { visual.dispose(); }
+  });
+
+  it('points nose-up while descending under the chute', () => {
+    const scene = new THREE.Scene();
+    const mesh = buildRocketMesh(data);
+    const visual = new RocketVisual(scene, mesh, data);
+    try {
+      visual.update(aimedState(1, { x: 0, y: -10, z: 0 }, { chuteDeployed: true, phase: 'descent' }));
+      visual.update(aimedState(6, { x: 0, y: -10, z: 0 }, { chuteDeployed: true, phase: 'descent' }));
+      const nose = noseDir(mesh);
+      expect(nose.y).toBeGreaterThan(0.999);
+    } finally { visual.dispose(); }
+  });
+
+  it('ignores near-zero velocity (no defined direction)', () => {
+    const scene = new THREE.Scene();
+    const mesh = buildRocketMesh(data);
+    const visual = new RocketVisual(scene, mesh, data);
+    try {
+      visual.update(aimedState(1, { x: 0.2, y: 0.1, z: 0 }));
+      const nose = noseDir(mesh);
+      expect(nose.y).toBeGreaterThan(0.999); // still upright
+    } finally { visual.dispose(); }
+  });
+
+  it('freezes attitude once landed', () => {
+    const scene = new THREE.Scene();
+    const mesh = buildRocketMesh(data);
+    const visual = new RocketVisual(scene, mesh, data);
+    try {
+      visual.update(aimedState(1, { x: 10, y: 0, z: 0 }));
+      visual.update(aimedState(6, { x: 10, y: 0, z: 0 }));
+      const before = noseDir(mesh).clone();
+      visual.update(aimedState(7, { x: 0, y: -20, z: 0 }, { phase: 'landed' }));
+      const after = noseDir(mesh);
+      expect(after.distanceTo(before)).toBeLessThan(0.001);
+    } finally { visual.dispose(); }
+  });
+});
