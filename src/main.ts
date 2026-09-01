@@ -1,7 +1,8 @@
 import './style.css';
 import './ui/ui.css';
 import { SceneManager } from './world/scene';
-import { environmentById } from './world/environments';
+import { environmentById, type EnvironmentDef } from './world/environments';
+import type { BuildContext } from './world/environments/types';
 import { makeParamsFor } from './world/environments/params';
 import { buildRocketMesh } from './world/rocketMesh';
 import { buildScaleLineup } from './world/scaleLineup';
@@ -47,12 +48,18 @@ function applyDebugCam(): void {
   }
 }
 
-// ?debug=1 exposes the scene manager for CDP-based verification scripts.
+// ?debug=1 exposes the scene manager (and, once launched, the sim + its
+// ground sampler) for CDP-based verification scripts.
 if (qs.get('debug') === '1') {
-  (window as unknown as Record<string, unknown>).__rkt = { scene };
+  (window as unknown as Record<string, unknown>).__rkt = {
+    scene,
+    get sim() { return sim; },
+    get groundAt() { return launchGroundAt; },
+  };
 }
 
 let sim: Simulation | null = null;
+let launchGroundAt: ((x: number, z: number) => number) | undefined;
 let visual: RocketVisual | null = null;
 let previewMesh: ReturnType<typeof buildRocketMesh> | null = null;
 let current: { params: EnvParams; challenge: ChallengeConfig } | null = null;
@@ -108,6 +115,21 @@ function addTargetRing(challenge: ChallengeConfig, params: EnvParams): void {
   scene.worldGroup.add(buildTargetAltitudeRing(alt, params.launchY ?? params.groundHeight));
 }
 
+// Shared by preview and launch: rebuild the world from a seed and hand back
+// the build context so callers can use its groundAt sampler.
+function buildEnvironment(env: EnvironmentDef, params: EnvParams, seed: number, showTargetZone: boolean): BuildContext {
+  const ctx: BuildContext = {
+    scene: scene.scene,
+    root: scene.worldGroup,
+    showTargetZone,
+    registerSystem: (sys) => scene.registerWorldSystem(sys),
+    startPhase,
+    weather: weatherOverride,
+  };
+  env.build(ctx, params, mulberry32(seed));
+  return ctx;
+}
+
 // Render the selected environment with the rocket resting on the pad, before any
 // launch and after reset/selection changes, so the scene is never empty/black.
 function showPreview(): void {
@@ -121,10 +143,7 @@ function showPreview(): void {
   scene.clearWorld();
   scene.reset();
   applyDebugCam();
-  env.build(
-    { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone', registerSystem: (sys) => scene.registerWorldSystem(sys), startPhase, weather: weatherOverride },
-    params, mulberry32(PREVIEW_SEED),
-  );
+  buildEnvironment(env, params, PREVIEW_SEED, sel.challenge.type === 'landing-zone');
   addScaleLineup(env.id, params, rocket);
   addTargetRing(sel.challenge, params);
   scene.setGroundFloor(params.groundHeight);
@@ -152,15 +171,13 @@ function launch(): void {
   scene.clearWorld();
   scene.reset();
   applyDebugCam();
-  env.build(
-    { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone', registerSystem: (sys) => scene.registerWorldSystem(sys), startPhase, weather: weatherOverride },
-    params, mulberry32(seed),
-  );
+  const ctx = buildEnvironment(env, params, seed, sel.challenge.type === 'landing-zone');
   addScaleLineup(env.id, params, rocket);
   addTargetRing(sel.challenge, params);
   scene.setGroundFloor(params.groundHeight);
 
-  sim = new Simulation({ rocket, motor, environment: params, seed, challenge: sel.challenge });
+  sim = new Simulation({ rocket, motor, environment: params, seed, challenge: sel.challenge, groundAt: ctx.groundAt });
+  launchGroundAt = ctx.groundAt;
   const mesh = buildRocketMesh(rocket);
   mesh.position.set(0, params.launchY ?? params.groundHeight, 0);
   visual = new RocketVisual(scene.scene, mesh, rocket);

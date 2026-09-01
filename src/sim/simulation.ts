@@ -44,6 +44,12 @@ export class Simulation {
     const s = this.state;
     const { rocket, motor, environment } = this.config;
     const ground = environment.launchY ?? environment.groundHeight;
+    // Landing surface follows the rendered terrain when the environment
+    // provides a sampler, so rockets drifting over hills rest ON the hill,
+    // not at pad level inside it. Pad support and the apogee baseline keep
+    // the flat pad level (apogee is measured above the launch site).
+    const sampled = this.config.groundAt?.(s.position.x, s.position.z);
+    const surface = sampled !== undefined && Number.isFinite(sampled) ? sampled : ground;
 
     if (s.phase === 'idle') {
       s.phase = 'boost';
@@ -94,9 +100,9 @@ export class Simulation {
     // Landing, only once airborne. Classify hard impacts as crashes, keeping
     // phase and outcome consistent (a `failed` phase always has a crash outcome,
     // never a leftover `nominal` from the ejection roll).
-    if (s.liftedOff && s.position.y <= ground) {
+    if (s.liftedOff && s.position.y <= surface) {
       s.impactSpeed = Math.abs(s.velocity.y);
-      s.position = vec(s.position.x, ground, s.position.z);
+      s.position = vec(s.position.x, surface, s.position.z);
       s.velocity = vec(0, 0, 0);
       const hardLanding = !s.chuteDeployed || s.impactSpeed > HARD_LANDING_MPS;
       s.phase = hardLanding ? 'failed' : 'landed';

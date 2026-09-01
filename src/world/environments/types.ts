@@ -14,6 +14,12 @@ export interface BuildContext {
   startPhase?: number;
   /** forced weather (?weather=...) for deterministic CDP shots; otherwise rolled from biome weights */
   weather?: WeatherKind;
+  /**
+   * Out-param: every environment build sets this to the height its ground
+   * visually occupies at a horizontal position, so the simulation can land
+   * rockets on terrain (and on bathtub water) instead of flat pad level.
+   */
+  groundAt?: (x: number, z: number) => number;
 }
 
 export interface EnvironmentDef {

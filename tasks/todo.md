@@ -303,3 +303,40 @@ Order: scatter tests+impl → pad bullseye+plate → targetRing tests+impl+UI wi
     torus+disc+beacon, updates via onChallengeChange → showPreview.
 - Smoke: OK, no console errors (new probes also capture warnings: only the
   pre-existing THREE.Clock deprecation notice).
+
+## Fix round 4 — terrain-aware landing (2026-09-01)
+
+Bug: sim lands against flat scalar ground (simulation.ts:97 `y <= ground` = pad
+level), but the world renders seeded heightmap terrain. Rockets drifting over
+hills bury themselves below the visible surface; the snap-back to pad level
+teleports them into terrain.
+
+Plan:
+1. SimConfig.groundAt?: (x, z) => number — landing sampler; pad support and
+   apogee baseline stay on scalar pad ground (launchY ?? groundHeight).
+   Landing check snaps to groundAt(x, z) at the post-integration position,
+   falling back to pad ground when absent/NaN.
+2. BuildContext.groundAt?: HeightAt out-param set by base() (flat envs =>
+   () => groundY). Bathtub overrides: within r45 => water surface 2.5, else
+   base terrain — rocket lands ON the water, not the tub floor.
+3. main.ts: extract buildEnvironment() helper (both paths), launch() passes
+   ctx.groundAt into Simulation. Extend debug __rkt with sim + groundAt for
+   CDP verification.
+4. TDD: sim tests (plateau landing, drifting hill landing w/ wind, NaN
+   fallback); world test (all 8 envs set ctx.groundAt; bathtub water/beyond;
+   pad center flattened; mountain terrain varies).
+5. Quality gate + CDP mountain-launch probe: landed y == groundAt(x, z).
+
+### Fix round 4 — verification (2026-09-01)
+
+- Quality: typecheck clean, 212/212 tests (34 files), build OK.
+- New tests: tests/sim/terrainLanding.test.ts (hill landing, valley landing
+  below pad level, NaN fallback, distant-terrain apogee invariance) and
+  tests/world/groundAt.test.ts (all envs set ctx.groundAt, pad flattened,
+  mountain relief, bathtub water/floor split).
+- Live CDP (probe-terrain.mjs, __rkt.sim + __rkt.groundAt): mountain landed
+  y=1212 == groundAt(x,z) at (-36, 8.7) — rests ON the mountainside; park
+  landed y=3 on a bump; bathtub splashed down at y=2.5 (water, not floor).
+  Smoke OK, no console errors.
+- Contract note: groundAt is trusted to equal pad level near the pad (world
+  flattens a r34 clearing); apogee/liftoff stay pad-relative by design.

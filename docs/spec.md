@@ -233,6 +233,12 @@ a seed, it produces:
   optional **launch height** (`launchY`, e.g. the bathtub's pad floats at the
   water surface above the tub floor), wind profile (base speed/direction +
   gust), world bounds, and an optional target landing zone for challenges.
+- A **ground sampler** (`ctx.groundAt(x, z)`), published by the build: the
+  height the rendered ground occupies anywhere. The simulation uses it for
+  touchdown (`SimConfig.groundAt`), so a rocket drifting over a hill rests on
+  the hill — and bathtub flights splash down on the water surface. The pad
+  area is flattened to the pad level, so liftoff and the apogee baseline
+  (altitude above the launch site) remain the flat-pad values.
 
 Because the params bundle is pure data derived deterministically from the seed,
 the environment generator's *logic* is unit-testable without rendering.

@@ -82,6 +82,13 @@ export interface SimConfig {
   environment: EnvParams;
   seed: number;
   challenge: ChallengeConfig;
+  /**
+   * Landing-surface height at a horizontal position, matching the rendered
+   * terrain (set by the environment build). When absent the sim lands on the
+   * flat pad level (`launchY ?? groundHeight`). Pad support and the apogee
+   * baseline always use the pad level regardless of this sampler.
+   */
+  groundAt?: (x: number, z: number) => number;
 }
 
 export interface FlightSummary {

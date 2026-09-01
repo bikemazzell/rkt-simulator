@@ -164,6 +164,7 @@ function base(ctx: BuildContext, params: EnvParams, rng: Rng, biome: Biome, opts
   }
   if (pad) ctx.root.add(launchPad(params.groundHeight));
   if (ctx.showTargetZone) markTargetZone(ctx.root, params);
+  ctx.groundAt = heightAt; // sim lands on the terrain the world renders
   return heightAt;
 }
 
@@ -315,6 +316,10 @@ function bathtub(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   duck.add(cone(1.2, 3, 0xff8c00, 0, 7, 9));
   duck.position.set(0, g + 4, -12);
   ctx.root.add(duck);
+  // Land on the bath-water surface inside the rim, not the porcelain floor:
+  // the rocket launches from the water (launchY) and must splash down on it.
+  const floor = ctx.groundAt!;
+  ctx.groundAt = (x, z) => (x * x + z * z <= 45 * 45 ? g + 2.5 : floor(x, z));
 }
 
 function backyardDog(ctx: BuildContext, params: EnvParams, rng: Rng): void {
