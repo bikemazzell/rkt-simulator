@@ -231,3 +231,50 @@ history queue) and a wrong "trail drains when moving" assumption
 **Known minor gaps:** reference meshes are deliberately blocky silhouettes
 (no per-ref materials beyond flat Lambert); trail is a 1 px unlit line
 (THREE.Line ignores linewidth) — acceptable per review.
+
+## Fix round 2 — user feedback on deployed build (2026-09-01)
+
+User tested the deploy; three complaints, all diagnosed in code:
+
+1. **Rod unreadable** — 4 mm gray stick + invisible 18 cm plate.
+   Fix: thicken rod to 8 mm steel, orange safety tip cap on top, bigger
+   hexagonal blast plate (r 0.16). Still a real launch-rod look.
+2. **Same lineup every time + too narrow a range** — deterministic
+   log-distance fill over only 9 rungs; no small/large objects exist.
+   Fix: expand ladder to 22 rungs (eraser, golf ball, baseball, mug,
+   soccer ball, book, fire hydrant, trash can, sheep, horse, door, house,
+   elephant added); `pickReferences(h, rng?)` keeps nearest-below/above
+   brackets but fills remaining slots by weighted-random over a ±4×
+   log-window (person no longer forced). Seeded rng → per-preview variety;
+   redundancy suppression (12%) kept so sheep/trash-can, cow/car,
+   tall-person/horse/door alternate instead of stacking.
+3. **Backyard dog missing + "sheep" larger than people** — dog was placed
+   at `targetZone.center` (random point up to 120 m away, never in view,
+   build.ts:326). Fix: dog guards the pad ~3 m from the rocket, facing it.
+   The "sheep" were white cows (white body at near-person head height):
+   recolor cow brown, sheep gets a dark head/legs, lower animal heads to a
+   grazing pose, tighten size jitter (0.95–1.05).
+
+Order: scaleRefs tests→impl → scaleLineup tests→impl (12 new meshes +
+rod) → creatures/build/main wiring → quality gate → CDP probes (dog
+present near pad, lineup differs across reloads, rod tip visible) →
+docs touch-up → commit + push (Pages).
+
+### Fix round 2 — verification (2026-09-01)
+
+- Quality gate green after all fixes: typecheck clean, 201/201 tests, build OK.
+- CDP probe (healthy headless instance, rAF ~18fps): 4/4 distinct park lineups
+  with new rungs (sheep, book, trash-can, car, horse, soccer-ball,
+  fire-hydrant); rod + orange tip + blast plate on every load; refs project
+  on-screen; zero console errors across all loads.
+- Backyard dog: meshes at world (2.6, 0.45, 2.0), head toward pad; pixel
+  cross-check found dog-brown pixels at the projected screen spot (75 px in
+  40x40 window around 897,346). Cow recolors live (1 brown cow, 2 white
+  sheep with dark faces/legs).
+- Smoke: `node scripts/smoke-cdp.mjs http://localhost:4173 9222` → OK, no
+  console errors.
+- Gotcha for future probes: a stray bare `brave --remote-debugging-port=9222`
+  (Wayland/Vulkan, rAF throttled to 0) gave identity matrixWorld on the whole
+  worldGroup while camera matrices stayed fresh (controls.update composes
+  them) — verify rAF ticks before trusting matrix reads; kill by exact pid,
+  relaunch with the swiftshader headless flags.

@@ -82,11 +82,14 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
   around the pad so nothing ever spawns on the rocket.
 - **True scale.** One world unit = one meter. The rocket mesh is generated at
   its real catalogue size, flanked by a row of 3–5 everyday scale-reference
-  objects (soda can, wine bottle, dog, child, cow, car, person, pickup truck,
-  tall person) chosen per rocket from a fixed ladder so the nearest rungs
-  below/above its height always appear (a person is always included). The
-  lineup is environment-aware — clamped onto the sea raft and the rooftop,
-  skipped in the giant bathtub, where the joke scale would break it.
+  objects (from eraser, golf ball, and baseball through soda can, dog, sheep,
+  child, cow, car, and person up to horse, door, house, and elephant) chosen
+  per rocket from a 22-rung ladder: the nearest rungs below/above its height
+  always appear, and the remaining slots are drawn at random (seeded per
+  build) so every lineup differs. The launch rod is a 1 m rail with an orange
+  tip beside the pad. The lineup is environment-aware — clamped onto the sea
+  raft and the rooftop, skipped in the giant bathtub, where the joke scale
+  would break it.
 - Launch, Reset, Camera, Speed, and Mute buttons in the UI.
 - Keyboard: `Space` = launch/reset, `C` = toggle camera, `F` = cycle speed,
   `M` = mute, `WASD` = pan and `Q`/`E` = up/down (orbit mode).

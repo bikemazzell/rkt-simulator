@@ -12,11 +12,13 @@ procedural terrain.
   crash outcomes. Fixed-timestep integration (frame-rate independent).
 - **True real-world scale** — 1 world unit = 1 meter. Rockets render at their
   catalogue size (0.27 m to 2.05 m), standing on a thin blast plate with a
-  1 m launch rod, next to a row of everyday **scale-reference objects**
-  (wine bottle, dog, child, cow, car, person…) picked per rocket so its real
-  size reads at a glance. The rocket selector shows a human-scale hint
-  ("Height 41 cm — about as tall as a wine bottle"). Props, creatures, and
-  vegetation are real-sized to match (1.8 m villagers, 0.4 m grass…).
+  1 m launch rod (orange tip), next to a row of everyday **scale-reference
+  objects** (baseball, wine bottle, dog, sheep, cow, car, person, house,
+  elephant…, 22 rungs) picked per rocket with a fresh random draw each time
+  so its real size reads at a glance. The rocket selector shows a human-scale
+  hint ("Height 41 cm — about as tall as a wine bottle"). Props, creatures,
+  and vegetation are real-sized to match (1.8 m villagers, 0.4 m grass,
+  brown cows, dark-faced sheep — and the backyard dog guards the pad).
 - **Real Estes catalogue** — rockets and motors scraped from the manufacturer
   specs, with type-ahead search and compatibility filtering (or overload a
   rocket and see what happens).

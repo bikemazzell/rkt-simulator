@@ -312,8 +312,9 @@ function backyardDog(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   flora(ctx, params, rng, biome, { maxR: params.bounds.radius - 15, heightAt }); // hedges, flowers, grass
   water(ctx, rng, [{ radius: 9, x: birdbath.x, z: birdbath.z, y: g + 0.02 }]);
   const creatureSys = critters(ctx, params, rng, biome, { heightAt });
-  // An angry dog near the landing zone (flattened disc), real-size (~0.6 m at
-  // the shoulder), head bobbing as it growls.
+  // The angry dog guards the pad itself (the landing-zone ring can sit up to
+  // 120 m away in a random direction — a dog out there is invisible). Real
+  // size (~0.6 m at the shoulder), head bobbing as it growls at the rocket.
   const dog = new THREE.Group();
   dog.add(box(0.8, 0.3, 0.35, 0x7a4a1e, 0, g + 0.45, 0));     // body
   const dogHead = box(0.3, 0.3, 0.3, 0x7a4a1e, 0.5, g + 0.55, 0); // head
@@ -322,9 +323,9 @@ function backyardDog(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   for (const lx of [-0.28, 0.28]) for (const lz of [-0.12, 0.12]) {
     dog.add(box(0.1, 0.3, 0.1, 0x7a4a1e, lx, g + 0.15, lz));  // legs
   }
-  const target = params.targetZone;
-  dog.position.set(target ? target.center.x : 20, 0, target ? target.center.z : 0);
-  dog.rotation.y = Math.PI; // head (at +x local) faces the pad at the origin
+  dog.position.set(2.6, heightAt(2.6, 2.0), 2.0);
+  // Head sits at local +x; aim that axis at the pad at the origin.
+  dog.rotation.y = Math.atan2(dog.position.z, -dog.position.x);
   ctx.root.add(dog);
   creatureSys?.addHeadBob(dogHead, 0.06, 2.6);
 }

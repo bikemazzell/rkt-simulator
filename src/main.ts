@@ -91,10 +91,11 @@ function clearRocket(): void {
 // Real-size reference lineup next to the rocket so its scale reads at a glance.
 // Constrained per environment: the sea raft is only 16m wide, the post-resize
 // rooftop slab ~26m; the bathtub's whole joke is giant scale, so skip it there.
+// A fresh seed per call rolls a different row of references every visit.
 function addScaleLineup(envId: string, params: EnvParams, rocket: Rocket): void {
   if (envId === 'bathtub') return;
   const maxX = envId === 'sea' ? 6.5 : envId === 'rooftop' ? 11 : undefined;
-  scene.worldGroup.add(buildScaleLineup(rocket, params.launchY ?? params.groundHeight, maxX));
+  scene.worldGroup.add(buildScaleLineup(rocket, params.launchY ?? params.groundHeight, maxX, mulberry32(Date.now() >>> 0)));
 }
 
 // Render the selected environment with the rocket resting on the pad, before any

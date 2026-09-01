@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { mulberry32 } from '../../src/sim/rng';
 import {
   SCALE_REFERENCES,
   pickReferences,
@@ -28,71 +29,87 @@ describe('scale reference ladder', () => {
     expect(SCALE_REFERENCES.some((r) => r.id === 'person')).toBe(true);
   });
 
+  it('spans pocket-size objects, animals and large objects', () => {
+    expect(SCALE_REFERENCES.some((r) => r.id === 'baseball' && r.heightM < 0.1)).toBe(true);
+    expect(SCALE_REFERENCES.some((r) => r.id === 'book' && r.heightM < 0.3)).toBe(true);
+    expect(SCALE_REFERENCES.some((r) => r.id === 'coffee-mug' && r.heightM < 0.15)).toBe(true);
+    expect(SCALE_REFERENCES.some((r) => r.id === 'sheep')).toBe(true);
+    expect(SCALE_REFERENCES.some((r) => r.id === 'fire-hydrant')).toBe(true);
+    expect(SCALE_REFERENCES.some((r) => r.id === 'house' && r.heightM >= 2.8)).toBe(true);
+    expect(SCALE_REFERENCES.some((r) => r.id === 'elephant' && r.heightM >= 3.0)).toBe(true);
+  });
+
   it('has no coin rung (never selectable at rocket scale)', () => {
     expect(SCALE_REFERENCES.some((r) => r.id === 'coin')).toBe(false);
   });
 });
 
 describe('pickReferences', () => {
-  it('always includes person', () => {
-    for (const h of [0.28, 0.41, 0.6, 1.0, 1.5, 1.9, 2.05, 2.3]) {
-      const picked = pickReferences(h);
-      expect(picked.some((r) => r.id === 'person'), `h=${h}`).toBe(true);
-    }
+  it('is deterministic for a given rng seed', () => {
+    expect(pickReferences(0.9, mulberry32(7))).toEqual(pickReferences(0.9, mulberry32(7)));
   });
 
   it('returns between 3 and 5 references across the range', () => {
     for (let h = 0.15; h <= 2.4; h += 0.05) {
-      const picked = pickReferences(h);
+      const picked = pickReferences(h, mulberry32(3));
       expect(picked.length, `h=${h}`).toBeGreaterThanOrEqual(3);
       expect(picked.length, `h=${h}`).toBeLessThanOrEqual(5);
     }
   });
 
-  it('returns height-sorted results and is deterministic', () => {
-    const a = pickReferences(0.9);
-    const b = pickReferences(0.9);
-    expect(a).toEqual(b);
+  it('returns height-sorted results', () => {
+    const a = pickReferences(0.9, mulberry32(4));
     const heights = a.map((r) => r.heightM);
     for (let i = 1; i < heights.length; i++) {
       expect(heights[i]).toBeGreaterThan(heights[i - 1]);
     }
   });
 
-  it('brackets the queried height when both sides exist', () => {
-    const h = 0.41; // typical BT-50 rocket total height
-    const picked = pickReferences(h);
-    const below = picked.filter((r) => r.heightM <= h);
-    const above = picked.filter((r) => r.heightM >= h);
-    expect(below.length).toBeGreaterThan(0);
-    expect(above.length).toBeGreaterThan(0);
-    // nearest rung on each side of the ladder must be in the result
-    expect(below[below.length - 1].id).toBe('wine-bottle');
-    expect(above[0].id).toBe('dog');
-  });
-
-  it('drops redundant fill candidates within 12% of a picked rung', () => {
-    // cow 1.45 vs car 1.50 are within 12% — never both in a lineup
+  it('always brackets the height with the nearest rungs', () => {
     for (let h = 0.15; h <= 2.4; h += 0.05) {
-      const picked = pickReferences(h);
+      const picked = pickReferences(h, mulberry32(11));
       const ids = picked.map((r) => r.id);
-      const hasCow = ids.includes('cow');
-      const hasCar = ids.includes('car');
-      expect(hasCow && hasCar, `h=${h}`).toBe(false);
+      let below: ScaleRef | undefined;
+      for (const r of SCALE_REFERENCES) if (r.heightM <= h) below = r;
+      if (below) expect(ids, `h=${h}`).toContain(below.id);
+      const above = SCALE_REFERENCES.find((r) => r.heightM >= h);
+      if (above && above !== below) {
+        // The above rung is only skippable when it reads as the same height
+        // as the below rung (within the 12% redundancy band).
+        const redundant = below !== undefined && above.heightM / below.heightM < 1.12;
+        if (!redundant) expect(ids, `h=${h}`).toContain(above.id);
+      }
     }
   });
 
+  it('never picks two rungs within 12% of each other', () => {
+    for (let h = 0.15; h <= 2.4; h += 0.05) {
+      const picked = pickReferences(h, mulberry32(23));
+      for (let i = 1; i < picked.length; i++) {
+        expect(picked[i].heightM / picked[i - 1].heightM, `h=${h}`).toBeGreaterThanOrEqual(1.12);
+      }
+    }
+  });
+
+  it('varies the lineup between visits (seeded randomness)', () => {
+    const sets = new Set<string>();
+    for (let seed = 1; seed <= 24; seed++) {
+      sets.add(pickReferences(0.9, mulberry32(seed)).map((r) => r.id).join(','));
+    }
+    // Randomized fill should produce a spread of distinct lineups, not one row.
+    expect(sets.size).toBeGreaterThanOrEqual(6);
+  });
+
   it('falls back to log-distance fill when no rung exists above', () => {
-    // falcon-9 total height ~2.28 m > tallest rung (tall person 2.00)
-    const picked = pickReferences(2.28);
-    expect(picked.some((r) => r.heightM > 2.28)).toBe(false); // nothing above exists
+    // 3.5 m > tallest rung (elephant 3.20)
+    const picked = pickReferences(3.5, mulberry32(5));
+    expect(picked.some((r) => r.heightM > 3.5)).toBe(false); // nothing above exists
     expect(picked.length).toBeGreaterThanOrEqual(3);
-    expect(picked.some((r) => r.id === 'tall-person')).toBe(true);
-    expect(picked.some((r) => r.id === 'person')).toBe(true);
+    expect(picked.some((r) => r.id === 'elephant')).toBe(true);
   });
 
   it('is stable at exact rung heights', () => {
-    const atRung = pickReferences(byId('person').heightM);
+    const atRung = pickReferences(byId('person').heightM, mulberry32(2));
     expect(atRung.filter((r) => r.id === 'person').length).toBe(1);
     expect(atRung.length).toBeGreaterThanOrEqual(3);
   });

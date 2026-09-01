@@ -92,8 +92,9 @@ function makeAnimal(rng: Rng, kind: AnimalKind, mats: CreatureMats): THREE.Group
   const torso = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.1, 2.2), body);
   torso.position.y = 1.25;
   g.add(torso);
+  // Grazing pose: head lowered so the animal reads shorter than a villager.
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), mats.animalHead(kind));
-  head.position.set(0, 1.55, 1.45);
+  head.position.set(0, 1.45, 1.45);
   g.add(head);
   const legMat = mats.animalLeg(kind);
   const legs = [
@@ -104,7 +105,7 @@ function makeAnimal(rng: Rng, kind: AnimalKind, mats: CreatureMats): THREE.Group
   ];
   for (const leg of legs) g.add(leg);
   g.userData.limbs = legs;
-  g.scale.setScalar(ANIMAL_SCALE[kind] * randRange(rng, 0.92, 1.08));
+  g.scale.setScalar(ANIMAL_SCALE[kind] * randRange(rng, 0.95, 1.05));
   g.rotation.y = rng() * Math.PI * 2;
   return g;
 }
@@ -156,9 +157,11 @@ function makeMats(rng: Rng): CreatureMats {
   return {
     villagerRobe: () => lambert(robeColors[Math.floor(rng() * robeColors.length)]),
     villagerSkin: () => lambert(0xc9a07a),
-    animalBody: (k) => lambert(k === 'cow' ? 0xf5f5f5 : k === 'sheep' ? 0xe8e8e8 : 0xe79fb1),
-    animalHead: (k) => lambert(k === 'cow' ? 0xd98c8c : k === 'sheep' ? 0xc7a17a : 0xe79fb1),
-    animalLeg: (k) => lambert(k === 'cow' ? 0xe0e0e0 : k === 'sheep' ? 0x9c9c9c : 0xd98c98),
+    // Brown cow / white sheep with dark face+legs / pink pig — the palette
+    // alone distinguishes the three kinds at a distance.
+    animalBody: (k) => lambert(k === 'cow' ? 0x9c6a3c : k === 'sheep' ? 0xeeeeee : 0xe79fb1),
+    animalHead: (k) => lambert(k === 'cow' ? 0x7a4e26 : k === 'sheep' ? 0x3a3a3a : 0xe79fb1),
+    animalLeg: (k) => lambert(k === 'cow' ? 0x4a3218 : k === 'sheep' ? 0x3a3a3a : 0xd98c98),
   };
 }
 
