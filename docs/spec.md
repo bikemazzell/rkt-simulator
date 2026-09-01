@@ -98,11 +98,24 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
   a beacon line down to the pad) at the chosen altitude, so the player can see
   the rocket pass through and above the target. It appears in the preview and
   updates immediately when the challenge or altitude is edited.
+- **Launch-attitude gimbal.** In the preview, three colored gimbal rings
+  (X red, Y green, Z blue) surround the rocket. Dragging a ring rotates the
+  rocket about that axis — the ring's label shows the live angle — and
+  double-click (or double-tap) opens a small input to type an exact angle
+  (degrees, normalized to (−180, 180]). The launch rod tilts with the rocket.
+  Axis semantics: X tilts the nose toward +Z, Z toward −X, Y spins the tilt
+  plane (alone it is a no-op). The aimed direction feeds the sim as a fixed
+  world-space thrust axis for the whole burn (no windcocking); while the
+  rocket is on the rail it is held at the pad (no lateral slide), and a ~90°
+  aim with no vertical thrust component ends as a rail tip-off. **Reset**
+  zeroes the aim; changing rocket, environment, or challenge preserves it.
 - Launch, Reset, Camera, Speed, and Mute buttons in the UI.
 - Keyboard: `Space` = launch/reset, `C` = toggle camera, `F` = cycle speed,
   `M` = mute, `WASD` = pan and `Q`/`E` = up/down (orbit mode).
 - The selected environment is shown immediately (pre-launch preview) and updates
   when the rocket or environment selection changes.
+- URL overrides for verification: `?seed=<uint>` pins the launch seed for
+  reproducible flights (see also `?env`, `?weather`, `?tod`, `?cam`, `?debug`).
 
 ## 5. Rockets
 
@@ -189,7 +202,9 @@ idle → boost → coast → apogee → descent → landed
 
 - **idle:** on pad, awaiting launch. The pad supports the rocket during the
   initial thrust ramp; the rocket does not "land" before it has lifted off.
-- **boost:** motor burning, thrust > 0.
+- **boost:** motor burning, thrust > 0. Thrust acts along the configured launch
+  attitude (`SimConfig.initialDirection`, default straight up), fixed in world
+  space for the whole burn.
 - **coast:** burnout to apogee (vertical velocity > 0).
 - **apogee:** vertical velocity crosses zero.
 - **descent:** falling under parachute (or ballistic if the chute failed).
@@ -294,9 +309,14 @@ is owned by the environment's `params` (there is no separate wind field on
   (body cylinder, nose cone, fins, colors) in `rocketMesh.ts` — at true scale
   (body length and diameter in meters, no inflation).
 - **Scale lineup:** `scaleRefs.ts` holds the pure reference ladder and
-  `pickReferences` (nearest below/above the rocket's total height + person +
-  log-distance fills, with redundancy suppression); `scaleLineup.ts` builds
-  the blocky reference meshes, launch rod, and blast plate.
+  `pickReferences` (nearest below/above the rocket's total height + random
+  seeded fills, with redundancy suppression); `scaleLineup.ts` builds
+  the blocky reference meshes and the launch rod (grouped so it can tilt).
+- **Gimbal:** `gizmo.ts` renders the three drag rings (fat invisible tori as
+  hit proxies, anchors for labels) and hosts the DOM layer — angle labels,
+  drag with camera-lock, and the double-click/double-tap exact-angle input.
+  `sim/aim.ts` is the pure math (angle normalization, Euler 'XYZ' direction
+  closed form pinned by a parity test against three).
 - **Effects:** rocket-proportioned flame during boost, parachute canopy on
   recovery (radius from `chuteDiameterM`), explosion burst on CATO/hard
   landing, and a short fading trail line behind the rocket. Kept simple

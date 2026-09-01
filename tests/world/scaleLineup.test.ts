@@ -53,8 +53,10 @@ describe('buildScaleLineup', () => {
       .map((c) => c.userData.refId);
     expect(refIds.length).toBeGreaterThanOrEqual(3);
     for (const id of refIds) expect(expected.some((r) => r.id === id)).toBe(true);
-    expect(lineup.children.some((c) => c.userData.isRod)).toBe(true);
-    expect(lineup.children.some((c) => c.userData.isRodTip)).toBe(true);
+    const rodGroup = lineup.children.find((c) => c.userData.isRodGroup) as THREE.Group | undefined;
+    expect(rodGroup).toBeTruthy();
+    expect(rodGroup!.children.some((c) => c.userData.isRod)).toBe(true);
+    expect(rodGroup!.children.some((c) => c.userData.isRodTip)).toBe(true);
     expect(lineup.children.some((c) => c.userData.isBlastPlate)).toBe(false);
   });
 
@@ -64,7 +66,7 @@ describe('buildScaleLineup', () => {
     const lineup = buildScaleLineup(rocket, groundY, undefined, mulberry32(3));
     lineup.updateMatrixWorld(true);
     for (const child of lineup.children) {
-      if (child.userData.isRod || child.userData.isRodTip) continue;
+      if (child.userData.isRodGroup) continue; // the rail rises from the pad
       const bbox = bboxOf(child);
       expect(bbox.min.y).toBeCloseTo(groundY, 2);
     }
@@ -96,11 +98,14 @@ describe('buildScaleLineup', () => {
   it('builds a 1 m launch rod with an orange tip beside the rocket body', () => {
     const rocket = makeRocket(0.5, 0.05);
     const lineup = buildScaleLineup(rocket, 0);
-    const rod = lineup.children.find((c) => c.userData.isRod)!;
-    const tip = lineup.children.find((c) => c.userData.isRodTip)!;
+    const rodGroup = lineup.children.find((c) => c.userData.isRodGroup) as THREE.Group;
+    const rod = rodGroup.children.find((c) => c.userData.isRod)!;
+    const tip = rodGroup.children.find((c) => c.userData.isRodTip)!;
     const bbox = bboxOf(rod);
     expect(bbox.max.y - bbox.min.y).toBeCloseTo(1.0, 2);
-    expect(rod.position.x).toBeCloseTo(0.05 / 2 + 0.06, 3);
+    // The rod group pivots at the rod's own base so tilting never lifts it.
+    expect(rodGroup.position.x).toBeCloseTo(0.05 / 2 + 0.06, 3);
+    expect(rod.position.x).toBeCloseTo(0, 3);
     expect(bbox.min.y).toBeCloseTo(0, 2);
     // Safety tip caps the rod (visible marker so the rod reads as hardware).
     const tipBox = bboxOf(tip);

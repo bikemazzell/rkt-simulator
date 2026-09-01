@@ -264,16 +264,22 @@ export function buildScaleLineup(
   group.position.y = groundY;
 
   // 1 m launch rod hugging the rocket body; the orange tip makes it read as
-  // pad hardware rather than a mystery stick.
+  // pad hardware rather than a mystery stick. Grouped so the whole rail can
+  // tilt with the aimed rocket — pivoting at the rod's own base (the group
+  // sits at the rod position) so tilting never lifts it off the pad.
   const bodyRadius = rocket.diameterM / 2;
   const rodX = bodyRadius + 0.06;
+  const rodGroup = new THREE.Group();
+  rodGroup.userData.isRodGroup = true;
+  rodGroup.position.set(rodX, 0, 0);
   const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1.0, 8), mat(0xc8ccd0));
-  rod.position.set(rodX, 0.5, 0);
+  rod.position.set(0, 0.5, 0);
   rod.userData.isRod = true;
   const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.06, 8), mat(0xff6a00));
-  tip.position.set(rodX, 0.97, 0);
+  tip.position.set(0, 0.97, 0);
   tip.userData.isRodTip = true;
-  group.add(rod, tip);
+  rodGroup.add(rod, tip);
+  group.add(rodGroup);
 
   const total = totalHeightM(rocket);
 

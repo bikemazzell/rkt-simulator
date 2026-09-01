@@ -22,6 +22,11 @@ procedural terrain.
 - **Real Estes catalogue** — rockets and motors scraped from the manufacturer
   specs, with type-ahead search and compatibility filtering (or overload a
   rocket and see what happens).
+- **Launch-attitude gimbal** — three colored rings (X red, Y green, Z blue)
+  around the preview rocket set its launch direction. Drag a ring to tilt or
+  spin (angle labels update live), double-click (or double-tap) to type an
+  exact angle. The launch rod tilts with the rocket; a horizontal aim ends in
+  a rail tip-off. Reset zeroes the aim, changing rocket/env/challenge keeps it.
 - **Eight environments** — park, urban, mountain, desert, open sea, rooftop,
   plus two funny ones: a giant bathtub (launch off a rubber duck) and a
   backyard guarded by an angry dog.

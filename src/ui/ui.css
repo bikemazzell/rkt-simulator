@@ -122,3 +122,34 @@
 }
 .rkt-summary-card h2 { margin-bottom: 14px; font-size: 18px; }
 .rkt-summary-card .rkt-btn { margin-top: 16px; width: 100%; }
+
+.rkt-gizmo-label {
+  position: fixed;
+  transform: translate(-50%, -140%);
+  font: 600 11px/1.4 system-ui, monospace;
+  background: rgba(10, 12, 18, 0.72);
+  padding: 1px 5px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 6;
+  white-space: nowrap;
+}
+
+.rkt-gizmo-input {
+  position: fixed;
+  z-index: 7;
+  background: rgba(10, 12, 18, 0.9);
+  border: 1px solid #3a4152;
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.rkt-gizmo-input input {
+  width: 4.5em;
+  font: 600 12px system-ui, monospace;
+  color: #e8eaf0;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 2px 4px;
+}

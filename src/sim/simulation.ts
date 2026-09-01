@@ -1,7 +1,7 @@
 import type { SimConfig, FlightState, FlightSummary, Vec3, Rocket } from './types';
 import { initialFlightState, advancePhase } from './flight';
 import { thrustAt } from './thrustCurve';
-import { stepMotion } from './integrator';
+import { stepMotion, thrustAxis } from './integrator';
 import { windAt } from './atmosphere';
 import { vec, horizontalDistance, length } from './vec';
 import { mulberry32, type Rng } from './rng';
@@ -26,6 +26,7 @@ export class Simulation {
   private readonly config: SimConfig;
   private readonly rng: Rng;
   private readonly launchPos: Vec3;
+  private readonly thrustDir: Vec3;
   private ejected = false;
 
   constructor(config: SimConfig) {
@@ -33,6 +34,7 @@ export class Simulation {
     this.rng = mulberry32(config.seed);
     this.state = initialFlightState(config);
     this.launchPos = { ...this.state.position };
+    this.thrustDir = thrustAxis(config.initialDirection);
   }
 
   get done(): boolean {
@@ -77,17 +79,21 @@ export class Simulation {
       position: s.position, velocity: s.velocity, mass: s.mass,
       thrustN, refArea, dragCoefficient: cd,
       wind: windAt(environment.wind, this.rng), dt: DT,
+      thrustDirection: this.thrustDir,
     });
     s.position = next.position;
     s.velocity = next.velocity;
 
-    // Pad support: before liftoff the pad holds the rocket up during the thrust ramp.
+    // Pad support: before liftoff the pad holds the rocket up during the thrust
+    // ramp. An angled aim must not slide the rocket sideways off the pad — the
+    // launch rail pins it horizontally until the vertical thrust component
+    // actually lifts it (a 90° aim therefore ends in a pad tip-off).
     if (!s.liftedOff) {
       if (s.position.y > ground) {
         s.liftedOff = true;
       } else {
-        s.position = vec(s.position.x, ground, s.position.z);
-        if (s.velocity.y < 0) s.velocity = vec(s.velocity.x, 0, s.velocity.z);
+        s.position = vec(this.launchPos.x, ground, this.launchPos.z);
+        s.velocity = vec(0, s.velocity.y < 0 ? 0 : s.velocity.y, 0);
       }
     }
 

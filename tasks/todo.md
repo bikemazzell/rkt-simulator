@@ -340,3 +340,161 @@ Plan:
   Smoke OK, no console errors.
 - Contract note: groundAt is trusted to equal pad level near the pad (world
   flattens a r34 clearing); apogee/liftoff stay pad-relative by design.
+
+## Feature round 5 — launch-attitude gimbal ("gumball") — plan (2026-09-01)
+
+USER REQUEST (verbatim intent): add a 3-circle (X,Y,Z) gimbal to set the rocket's
+initial launch direction (currently always straight up). Drag a circle to rotate
+the rocket (angle updates live while dragging). Double-click a circle to type an
+exact angle (e.g. -180, 270) + Enter to set it. Each circle displays its angle.
+Reset returns to default rocket-up.
+
+### Findings (codebase, verified)
+- integrator.ts:28 hardcodes thrust `vec(0, thrustN, 0)`; sim has NO attitude
+  model (no tipping dynamics — `tip-off` is an outcome roll, not physics).
+- flight.ts: initial velocity (0,0,0); simulation.ts: pad support clamps y at
+  pad ground until liftoff; apogee baseline = pad-relative.
+- main.ts: `onReset: showPreview` (Reset button); preview mesh added to
+  scene.scene; rod+tip are children of buildScaleLineup group (userData.isRod /
+  isRodTip) positioned relative to pad origin → rotating a rod subgroup about
+  the lineup origin pivots correctly at the rocket base.
+- OrbitControls owns renderer.domElement pointer events; gizmo drag must
+  raycast first and toggle controls.enabled.
+- Y-only rotation of an up vector is a no-op on direction (yaw sets the tilt
+  compass once X!=0); Z-only (roll) is cosmetic for a symmetric rocket.
+
+### Design decisions (post deepseek review — blocker + importants folded)
+1. Convention: aim = Euler(x°, y°, z°) order 'XYZ' (three's default; matches
+   Object3D.rotation for applyTo). VERIFIED axis semantics for an up-pointing
+   rocket under v' = Rx·Ry·Rz·v:
+   - X ring: tilt in Y–Z plane (positive → nose toward +Z).
+   - Z ring: tilt in X–Y plane (positive → nose toward −X).
+   - Y ring: SPIN (cosmetic for a symmetric rocket — never affects direction;
+     still fully draggable/typable per spec).
+   - Tilt "compass" = combination of X and Z; direction =
+     (−sin z, cos z·cos x, cos z·sin x) — always unit.
+   Angles normalized to (-180, 180]. Default {0,0,0} = straight up.
+   aim.ts stays pure (sim has no three dep) with a parity test pinning it to
+   THREE applyEuler — conscious decision, single source for sim + gizmo.
+2. Sim: thrust along the FIXED initial direction for the whole burn (rail-
+   guided stable rocket). PAD CLAMP EXTENDED: while !liftedOff the pad/rail
+   holds the rocket in ALL axes (x/z frozen at launch point, lateral velocity
+   zeroed) — a horizontal/down aim sits on the pad until the tip-off net
+   (driftDistance 0), never slides off the flattened clearing. Zero/NaN
+   direction input falls back to straight up (guard in simulation).
+3. Gimbal visible ONLY in preview; launch() consumes angles
+   (SimConfig.initialDirection) and disposes the gizmo. Angles persist across
+   rocket/env/challenge changes; Reset zeroes them — via a WRAPPED handler
+   `onReset: () => { aim = AIM_DEFAULT; showPreview(); }` AND the space-key
+   reset path (both zero; selection-change paths keep plain showPreview).
+   showPreview() calls clearGimbal() (alongside clearRocket) so repeated
+   rebuilds never leak gizmo meshes or label DOM.
+4. Rocket mesh AND launch rod tilt together around the rocket base (rod is the
+   aim rail). Refs/pad stay put. Bullseye pad unchanged.
+5. Labels: 3 HTML divs projected per frame from ring anchors; hidden when the
+   anchor is behind the camera (w<0) or off-screen. Drag starts only after a
+   ~3px move threshold (click/drag disambiguation); dblclick opens the input;
+   double-TAP (two touches <350ms) opens it on touch. Enter commits, Esc/blur
+   cancels. SceneManager gains public setControlsEnabled(bool) for drag lock.
+6. New debug QS `?seed=<n>` (launch seed override) + `__rkt.aim` getter and
+   `__rkt.setAim({x,y,z})` so CDP can set/read exact angles deterministically.
+7. Docs note: flights hold a fixed world attitude (no windcocking at this sim
+   fidelity) — aimed rockets fly "nose-true" while velocity curves.
+
+### Steps (TDD)
+1. src/sim/aim.ts (pure): AimAngles, normalizeAngle→(-180,180], AIM_DEFAULT,
+   aimDirection(angles)→unit Vec3 (hand-rolled 'XYZ': dir =
+   (−sin z, cos z·cos x, cos z·sin x); y drops out — spin only).
+   tests/sim/aim.test.ts: default up; X+90 → (0,0,+1), X−90 → (0,0,−1);
+   Z+90 → (−1,0,0), Z−90 → (+1,0,0); Y-only no-op ANY y; Z-only is a TILT
+   (not roll); X+Z combined matches formula; normalize (270→−90, 35, −180→180);
+   parity vs THREE applyEuler over sampled grid incl. all-three-nonzero;
+   unit length always.
+2. integrator.ts: StepInput.thrustDir?: Vec3 (default up);
+   thrustForce = scale(thrustDir, thrustN). tests: tilted thrust → lateral
+   velocity; horizontal thrust → zero vertical; absent → unchanged.
+3. SimConfig.initialDirection?: Vec3 (unit; doc: thrust direction for entire
+   burn; zero/NaN falls back to up). simulation.ts: normalize+guard once, pass
+   to stepMotion each step; PAD CLAMP: while !liftedOff freeze x/z at launch
+   point + zero lateral velocity (all-axis rail hold).
+   New tests/sim/aimedLaunch.test.ts: 35° tilt same seed → apogee < vertical,
+   drift > 10 m with horizontal direction matching aimDirection() horizontal
+   component (single source of truth, no hand-assumed azimuth); no
+   initialDirection → state trace EXACTLY equals legacy run (determinism);
+   90° → never lifts, x/z stay at 0 (frozen), tip-off fail, drift 0;
+   downward aim → held on pad → tip-off; terrain landing still ends flight.
+4. src/world/gizmo.ts (DOM-light): buildGimbal(radiusM) → Group: 3 ring
+   LineLoops (X 0xff5252 / Y 0x66ff8c / Z 0x5aa2ff, depthTest false,
+   renderOrder high) each with fat transparent hit torus (tube 0.06) +
+   userData axis + label anchor; radius = clamp(0.35, topY*0.45, 0.8).
+   GimbalController(scene-side class): angles state + reset(), set(axis,deg)
+   normalized, nudge, direction() (reuses sim aimDirection — single source),
+   applyTo(object3D) (rotation order 'XYZ'), attachRod(group), hitTest(ray),
+   drag math: ray ∩ plane(normal=ring axis, through center; fallback plane
+   normal=camera-forward when |dot|>0.99) → (u,v) basis atan2 delta, signed
+   right-hand; label layer: attachLabels(container) 3 divs + input popup,
+   updateLabels(camera,rect) projection, openInput(axis,x,y) Enter/Esc/blur.
+   attachControls(dom,{lockControls,unlockControls}): pointerdown raycast →
+   drag w/ pointer capture after 3px move threshold, live apply + labels
+   (click/dblclick never rotate); dblclick (mouse) + double-tap <350ms
+   (touch) → input; updateLabels hides anchors behind camera (w<0) or
+   off-screen.
+   tests/world/gizmo.test.ts: rings/proxies/anchors built per axis; set/
+   normalize/nudge/reset; applyTo direction parity (mesh.localToWorld of
+   (0,topY,0) tilts per aimDirection); dragDelta synthetic ±90; hitTest;
+   label text contents 'X 35°' style; input commit via fake events.
+5. main.ts wiring: module `let aim: AimAngles` (persists across selection
+   changes); clearGimbal() beside clearRocket (dispose gizmo + labels) called
+   at top of showPreview; showPreview(): create gimbal after previewMesh
+   (apply aim to mesh + rod subgroup; buildScaleLineup gains userData
+   .isRodGroup subgroup for rod+tip), gizmo into scene.scene at rocket base,
+   labels into host; launch(): initialDirection: aimDirection(aim), rotate
+   launch mesh + RocketVisual group, gimbal.dispose(); onReset wraps
+   zero-aim + showPreview; space-key reset path zeroes too; ?seed= override;
+   __rkt gains get aim() + setAim(). CSS: .rkt-gizmo-label, .rkt-gizmo-input.
+6. scaleLineup.ts: rod+tip moved into a userData.isRodGroup subgroup (pure
+   refactor, layout identical); update its tests if they assert direct child.
+7. npm run quality (typecheck + all tests + build).
+8. CDP probe-gimbal.mjs: labels read 'X 0°'; drag X-ring via Input mouse arc →
+   aim.x changes AND camera unmoved (orbit untouched); dblclick → input →
+   '35' + Enter → aim 35, mesh rotated, label live; also setAim for exact
+   angles; ?seed=123 park launch 0° vs 35° → apogee drop + horizontal drift
+   matching aimDirection() horizontal; horizontal 90° aim → tip-off, x/z
+   frozen at 0; Reset → zeros; bathtub gizmo at y 2.5; console-error sweep;
+   screenshots; scripts/smoke-cdp.mjs.
+9. Docs: README bullet (aim gimbal: drag rings, dblclick to type, Reset);
+   spec.md §4 controls + §9 module + sim initial-direction semantics.
+10. tasks/todo.md verification section; commit; push (Pages auto-deploy).
+
+### Review checkpoint
+Plan reviewed by deepseek + qwen (review-with); findings folded below before
+implementation starts.
+
+## Feature round 5 — gimbal: verification + review outcomes (2026-09-01)
+
+Reviews: deepseek APPROVE WITH CHANGES (1 blocker axis semantics + 3 important
++ 8 minor — all folded); qwen rerun APPROVE WITH CHANGES (1 blocker + 5
+important + 6 minor; 11/12 already covered by the revised plan/impl, 1 genuine
+new finding adopted: rod pivot at pad centre lifted its base when tilting —
+fixed by pivoting rodGroup at the rod's own base).
+
+Quality: typecheck clean, 241/241 tests, build OK (pre-existing >500kB chunk
+warning only).
+
+CDP probe (8/8 green, zero console errors incl warnings):
+- preview: rings + rod + labels X/Y/Z 0°; setAim({z:35}) → rocket + rod
+  rotation.z exactly 35°, order XYZ
+- drag X-ring: hover-lock cursor 'grab', aim.x live-updates, camera unmoved
+- dblclick Y-ring: popup input '-120' + Enter → aim.y −120
+- flight ?seed=123: straight apogee 59.31 m vs aimed(z:−35) 34.60 m, drift
+  110.75 m along aim horizontal, both nominal
+- 90° aim: rail tip-off, frozen at pad until fail (by design)
+- Reset zeroes aim; rocket/env/challenge changes persist it
+- bathtub: gizmo at y 2.5, no rod (lineup skipped there)
+
+Bug found by own probe and fixed: __rkt.setAim clobbered y/z (change-cb
+re-assigned `aim` from the half-updated controller between the three set()
+calls) — fixed by capturing the normalized target first.
+
+Smoke: OK, no console errors. Docs synced (README feature bullet; spec §4.3
+gimbal + ?seed= overrides, §7.1 initialDirection, §9 gizmo/aim modules).

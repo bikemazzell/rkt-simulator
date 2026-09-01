@@ -7,8 +7,10 @@ import { makeParamsFor } from './world/environments/params';
 import { buildRocketMesh } from './world/rocketMesh';
 import { buildScaleLineup } from './world/scaleLineup';
 import { buildTargetAltitudeRing } from './world/targetRing';
+import { buildGimbal, GimbalController, attachGimbalControls } from './world/gizmo';
 import { RocketVisual } from './world/effects';
 import { Simulation, DT } from './sim/simulation';
+import { aimDirection, normalizeAim, AIM_DEFAULT, type AimAngles } from './sim/aim';
 import { Sfx } from './audio/sfx';
 import { Ui } from './ui/ui';
 import { rocketById, compatibleMotors } from './data/rockets';
@@ -16,6 +18,7 @@ import { motorById } from './data/motors';
 import { scoreChallenge } from './sim/challenge';
 import { mulberry32 } from './sim/rng';
 import { isWeatherKind } from './world/weather';
+import { MathUtils, type Object3D } from 'three';
 import type { EnvParams, ChallengeConfig, Rocket } from './sim/types';
 
 const host = document.getElementById('app')!;
@@ -39,6 +42,11 @@ const camParam = qs.get('cam');
 const camParts = camParam !== null && camParam !== ''
   ? camParam.split(',').map(Number)
   : null;
+// ?seed=<uint> pins the launch seed for deterministic CDP verification.
+const seedParam = qs.get('seed');
+const launchSeedOverride = seedParam !== null && seedParam !== '' && !Number.isNaN(Number(seedParam))
+  ? Number(seedParam) >>> 0
+  : undefined;
 function applyDebugCam(): void {
   if (camParts && camParts.length >= 3 && camParts.slice(0, 3).every(Number.isFinite)) {
     // Orbit mode, or the follow-cam would drag this view back to the rocket.
@@ -55,6 +63,18 @@ if (qs.get('debug') === '1') {
     scene,
     get sim() { return sim; },
     get groundAt() { return launchGroundAt; },
+    get aim() { return { ...aim }; },
+    setAim(next: AimAngles) {
+      // Capture before touching the controller: each set() fires the change
+      // callback, which reassigns `aim` from the half-updated controller.
+      const restored = normalizeAim(next);
+      aim = restored;
+      if (gimbalCtl) {
+        gimbalCtl.set('x', restored.x);
+        gimbalCtl.set('y', restored.y);
+        gimbalCtl.set('z', restored.z);
+      }
+    },
   };
 }
 
@@ -70,6 +90,13 @@ let summaryTimer: ReturnType<typeof setTimeout> | null = null;
 let accumulator = 0;
 let last = performance.now();
 
+// Launch attitude (degrees). Persists across rocket/env/challenge changes;
+// zeroed only by Reset, consumed at launch.
+let aim: AimAngles = { ...AIM_DEFAULT };
+let gimbalCtl: GimbalController | null = null;
+let gimbalGroup: ReturnType<typeof buildGimbal> | null = null;
+let gimbalDom: { updateLabels(): void; dispose(): void } | null = null;
+
 const SPEEDS = [1, 4, 16];
 let speed = 1;
 function cycleSpeed(): number {
@@ -79,7 +106,10 @@ function cycleSpeed(): number {
 
 const ui = new Ui(host, {
   onLaunch: launch,
-  onReset: showPreview,
+  onReset: () => {
+    aim = { ...AIM_DEFAULT };
+    showPreview();
+  },
   onToggleMute: () => sfx.toggleMute(),
   onToggleCamera: () => {
     cameraMode = cameraMode === 'orbit' ? 'follow' : 'orbit';
@@ -95,6 +125,30 @@ if (envParam !== null && envParam !== '') ui.setEnv(envParam);
 function clearRocket(): void {
   if (visual) { visual.dispose(); visual = null; }
   if (previewMesh) { scene.scene.remove(previewMesh); previewMesh = null; }
+}
+
+function clearGimbal(): void {
+  if (gimbalDom) { gimbalDom.dispose(); gimbalDom = null; }
+  if (gimbalGroup) {
+    scene.scene.remove(gimbalGroup);
+    gimbalGroup.traverse((o) => {
+      const mesh = o as { geometry?: { dispose(): void }; material?: { dispose(): void } };
+      mesh.geometry?.dispose?.();
+      mesh.material?.dispose?.();
+    });
+    gimbalGroup = null;
+  }
+  gimbalCtl = null;
+}
+
+// The launch rod tilts with the aimed rocket, so the gizmo needs the rod
+// group built by the scale lineup (absent in the bathtub, which has no lineup).
+function findRodGroup(): Object3D | null {
+  let rod: Object3D | null = null;
+  scene.worldGroup.traverse((o) => {
+    if (!rod && o.userData?.isRodGroup) rod = o;
+  });
+  return rod;
 }
 
 // Real-size reference lineup scattered around the rocket so its scale reads
@@ -134,6 +188,7 @@ function buildEnvironment(env: EnvironmentDef, params: EnvParams, seed: number, 
 // launch and after reset/selection changes, so the scene is never empty/black.
 function showPreview(): void {
   clearRocket();
+  clearGimbal();
   sim = null;
   const sel = ui.getSelection();
   const rocket = rocketById(sel.rocketId)!;
@@ -152,6 +207,28 @@ function showPreview(): void {
   previewMesh.position.set(0, params.launchY ?? params.groundHeight, 0);
   scene.scene.add(previewMesh);
 
+  // Attitude gimbal: rings around the rocket base, labels + drag + exact
+  // angle input. The persisted aim restores the previous attitude.
+  gimbalGroup = buildGimbal(previewMesh.userData.topY ?? 1);
+  gimbalGroup.position.copy(previewMesh.position);
+  scene.scene.add(gimbalGroup);
+  gimbalCtl = new GimbalController(gimbalGroup);
+  gimbalCtl.applyTo(previewMesh);
+  const rod = findRodGroup();
+  if (rod) gimbalCtl.attachRod(rod);
+  gimbalCtl.set('x', aim.x);
+  gimbalCtl.set('y', aim.y);
+  gimbalCtl.set('z', aim.z);
+  aim = { ...gimbalCtl.angles };
+  gimbalCtl.onChange(() => { aim = { ...gimbalCtl!.angles }; });
+  gimbalDom = attachGimbalControls(gimbalCtl, gimbalGroup, {
+    camera: scene.camera,
+    dom: scene.domElement,
+    labelContainer: host,
+    lockControls: () => scene.setControlsEnabled(false),
+    unlockControls: () => scene.setControlsEnabled(true),
+  });
+
   groundHeight = params.launchY ?? params.groundHeight;
   finished = false;
   ui.setLaunchEnabled(true);
@@ -160,11 +237,12 @@ function showPreview(): void {
 
 function launch(): void {
   clearRocket();
+  clearGimbal();
   const sel = ui.getSelection();
   const rocket = rocketById(sel.rocketId)!;
   const motor = motorById(sel.motorId) ?? compatibleMotors(rocket)[0];
   const env = environmentById(sel.envId)!;
-  const seed = Date.now() >>> 0; // per-launch seed; drives all sim randomness deterministically
+  const seed = launchSeedOverride ?? (Date.now() >>> 0); // per-launch seed; drives all sim randomness deterministically
   const params = makeParamsFor(env.id, seed);
   current = { params, challenge: sel.challenge };
 
@@ -176,10 +254,16 @@ function launch(): void {
   addTargetRing(sel.challenge, params);
   scene.setGroundFloor(params.groundHeight);
 
-  sim = new Simulation({ rocket, motor, environment: params, seed, challenge: sel.challenge, groundAt: ctx.groundAt });
+  sim = new Simulation({
+    rocket, motor, environment: params, seed, challenge: sel.challenge,
+    groundAt: ctx.groundAt,
+    initialDirection: aimDirection(aim),
+  });
   launchGroundAt = ctx.groundAt;
   const mesh = buildRocketMesh(rocket);
   mesh.position.set(0, params.launchY ?? params.groundHeight, 0);
+  mesh.rotation.order = 'XYZ';
+  mesh.rotation.set(MathUtils.degToRad(aim.x), MathUtils.degToRad(aim.y), MathUtils.degToRad(aim.z));
   visual = new RocketVisual(scene.scene, mesh, rocket);
   groundHeight = params.launchY ?? params.groundHeight;
   finished = false;
@@ -210,6 +294,7 @@ function frame(now: number): void {
       ? { x: previewMesh.position.x, y: previewMesh.position.y + (previewMesh.userData.topY ?? 20) / 2, z: previewMesh.position.z }
       : { x: 0, y: 10, z: 0 };
   scene.render(focus);
+  gimbalDom?.updateLabels();
   requestAnimationFrame(frame);
 }
 
@@ -228,7 +313,15 @@ function finish(): void {
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
   switch (e.key.toLowerCase()) {
-    case ' ': e.preventDefault(); sim && !sim.done ? showPreview() : launch(); break;
+    case ' ':
+      e.preventDefault();
+      if (sim && !sim.done) {
+        aim = { ...AIM_DEFAULT }; // Reset zeroes the aim, like the UI button
+        showPreview();
+      } else {
+        launch();
+      }
+      break;
     case 'c': cameraMode = cameraMode === 'orbit' ? 'follow' : 'orbit'; scene.setCameraMode(cameraMode); break;
     case 'f': ui.setSpeedLabel(cycleSpeed()); break;
     case 'm': sfx.toggleMute(); break;

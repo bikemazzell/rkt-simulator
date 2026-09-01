@@ -8,15 +8,14 @@ export type CameraMode = 'orbit' | 'follow';
 export class SceneManager {
   readonly scene = new THREE.Scene();
   readonly worldGroup = new THREE.Group();
+  readonly camera: THREE.PerspectiveCamera;
   private readonly renderer: THREE.WebGLRenderer;
-  private readonly camera: THREE.PerspectiveCamera;
   private readonly controls: OrbitControls;
   private mode: CameraMode = 'orbit';
   private readonly heldKeys = new Set<string>();
   private readonly clock = new THREE.Clock();
   private readonly worldSystems: WorldSystem[] = [];
   private worldElapsed = 0;
-  /** Camera never dips below this height (the environment's pad plane). */
   private groundFloor = 0;
 
   constructor(private readonly host: HTMLElement) {
@@ -53,6 +52,14 @@ export class SceneManager {
   }
 
   setCameraMode(mode: CameraMode): void { this.mode = mode; }
+
+  /** Canvas owning pointer events (OrbitControls and the gimbal attach here). */
+  get domElement(): HTMLCanvasElement {
+    return this.renderer.domElement;
+  }
+
+  /** Toggle OrbitControls (e.g. while dragging a gizmo ring). */
+  setControlsEnabled(enabled: boolean): void { this.controls.enabled = enabled; }
 
   /** Set the plane the camera may not sink below (the env's ground height). */
   setGroundFloor(y: number): void { this.groundFloor = y; }

@@ -89,6 +89,12 @@ export interface SimConfig {
    * baseline always use the pad level regardless of this sampler.
    */
   groundAt?: (x: number, z: number) => number;
+  /**
+   * Launch attitude as a unit vector in world space (the direction the nose
+   * points at ignition). Absent, zero, or non-finite falls back to straight
+   * up. The attitude stays fixed in world space for the whole flight.
+   */
+  initialDirection?: Vec3;
 }
 
 export interface FlightSummary {
