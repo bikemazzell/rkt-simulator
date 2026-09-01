@@ -516,3 +516,73 @@ spot/orientation and the gizmo never came back after landing.
   probe coverage was the gate).
 - Bonus bug fixed: pending summary toast could pop over a relaunch (timer
   now cleared in launch()).
+
+## Feature round 7 — recovery devices (parachute / streamer / tumble / glider / helicopter)
+
+User intent: rockets recover by their real device; combos allowed (1 or 2+ together);
+unspecified rockets may roll a random device at ejection. Glider = glides like a little
+airplane; helicopter = spirals down; streamer = slower fall with flapping ribbon(s);
+tumble = no-assist fall. Sequence: plan → review (qwen + deepseek) → fold → build TDD
+→ verify → second review → push/deploy.
+
+### Facts (verified)
+- data/estes-products.json (141 'Rocket' products): no structured recovery field;
+  body_html prose mentions: parachute 74, streamer 13, tumble 1, helicopter 1
+  (Roto Rocket), glider 2 (Space Shuttle, Super Orbital Transport), none 56.
+  Combos exist: Mavericks chute+streamer, Mayhem chute+tumble, Space Shuttle
+  chute+glider, Roto chute+helicopter.
+- scripts/scrape-estes.mjs:143 currently infers `streamer = mass<0.03 ||
+  /streamer|tumble/i.test(text)` → sets chuteDiameterM 0; no per-device output.
+- sim today: recoveryArea() = chute disc area OR body-area×14 (TUMBLE_AREA_FACTOR);
+  applyOutcome ejection rolls chuteFail (0.04 / 0.15 for chuteless) → chuteDeployed
+  bool; descent = quadratic drag w/ recovery area; HARD_LANDING_MPS 15.
+- effects.ts: hemisphere chute at topY; attitude = weathercock / nose-up under
+  'chute' / freeze on land; trail; explosion.
+- UI hint exists under rocket selector (size hint) — recovery line goes beside it.
+
+### Design decisions
+1. Data: Rocket gains `recovery: RecoveryDevice[]` parsed from body_html keywords
+   (parachute|streamer|tumble|helicopter|glider; dedup; canonical order). Rockets
+   with no mention → `[]` = "Random" (rolled per launch, seeded). chuteDiameterM
+   generation unchanged (used only when a parachute deploys). Regen rockets.ts;
+   pins asserted in tests (space-shuttle, roto, mavericks, mayhem).
+2. Types: `RecoveryDevice = 'parachute'|'streamer'|'tumble'|'glider'|'helicopter'`;
+   FlightState.recoveryDeployed?: RecoveryDevice[] resolved at ejection;
+   chuteDeployed stays as generic "device deployed" flag (compat).
+3. New src/sim/recovery.ts: resolveRecovery(spec, rng) ([] → weighted single:
+   .55/.20/.10/.08/.07); dominantDevice() — sink-rate ordering
+   glider < helicopter < parachute < streamer < tumble (slowest sink wins physics);
+   per-device descent model:
+   - parachute: existing chute drag (area, chuteCd) — unchanged
+   - streamer: streamer drag area = body area × 45, cd 1.1 → 6-13 m/s sink
+   - tumble: existing body-area × 14 (may exceed hard-landing 15 m/s on heavies — game)
+   - helicopter: rotor drag area sized for 2.5-5.5 m/s sink + lateral spiral
+     (circular velocity perturbation, radius ~1.5 m, period ~2.5 s)
+   - glider: kinematic override post-deploy: glide ratio 3:1 at 8 m/s → sink
+     ~2.7 m/s, banking circle (radius ~15 m, period ~12 s), 1 s blend-in from
+     current velocity; gravity/drag bypassed while gliding (game feel, documented)
+   - fail roll: once for the whole recovery (device tangles → ballistic); existing
+     probabilities kept (0.04, 0.15 tumble-primary)
+4. effects.ts: buildStreamer (2 flapping ribbons, sine flutter via state.time),
+   buildRotor (2 spinning blades at topY, spin 20 rad/s), buildGliderWings (2 wing
+   planes + canard, deployed in descent); chute shown iff parachute ∈ deployed;
+   combos render every device; attitude per dominant: chute/streamer/heli nose-up,
+   heli + yaw spin, tumble end-over-end spin (~0.8 rev/s), glider velocity-aligned
+   + bank; all meshes tagged userData (isStreamer/isRotor/isGliderWings).
+5. UI: 'Recovery: Parachute + Glider' / 'Recovery: Random' hint line beside size
+   hint; updates on rocket change.
+6. Debug: ?recovery=chute,glider QS forces the list (validated); state exposes
+   recoveryDeployed for probes.
+
+### Steps (TDD)
+1. tests/data/recovery-data.test.ts pins → scrape-estes.mjs parser → regen → verify.
+2. tests/sim/recovery.test.ts (resolve/dominant/random) → src/sim/recovery.ts.
+3. tests/sim/descent-models.test.ts per-device sink/lateral bands + combos +
+   fail path → simulation.ts + outcomes.ts wiring.
+4. tests/world/recovery-visuals.test.ts (meshes, visibility by list, attitude
+   modes) → effects.ts + rocketMesh.ts builders.
+5. UI hint + tests; ?recovery= QS + __rkt.
+6. npm run quality; CDP: per-device launch probes (sink rate, meshes, attitude),
+   random distribution over N launches, combo visuals, smoke, screenshots.
+7. Docs README + spec; verification notes.
+8. Second review (deepseek + qwen) on the diff → fold fixes → push/deploy.

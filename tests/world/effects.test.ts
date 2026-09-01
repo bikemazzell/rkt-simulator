@@ -114,6 +114,37 @@ describe('RocketVisual attitude', () => {
     } finally { visual.dispose(); }
   });
 
+  it('keeps the nose on the velocity vector while still ascending after ejection', () => {
+    const scene = new THREE.Scene();
+    const mesh = buildRocketMesh(data);
+    const visual = new RocketVisual(scene, mesh, data);
+    try {
+      // Ejection fired at burnout+delay; at 45° aim the rocket is still
+      // climbing fast — the nose must keep following the arc, not snap up.
+      visual.update(aimedState(1, { x: 10, y: 10, z: 0 }, { chuteDeployed: true, phase: 'coast' }));
+      visual.update(aimedState(6, { x: 10, y: 10, z: 0 }, { chuteDeployed: true, phase: 'coast' }));
+      const nose = noseDir(mesh);
+      expect(nose.x).toBeGreaterThan(0.6);   // still 45° along the trajectory
+      expect(nose.y).toBeGreaterThan(0.6);
+    } finally { visual.dispose(); }
+  });
+
+  it('does not hang nose-up for chuteless (streamer/tumble) recovery', () => {
+    const chuteless = { ...data, chuteDiameterM: 0 };
+    const scene = new THREE.Scene();
+    const mesh = buildRocketMesh(chuteless);
+    const visual = new RocketVisual(scene, mesh, chuteless);
+    try {
+      visual.update(aimedState(1, { x: 8, y: -6, z: 0 }, { chuteDeployed: true, phase: 'descent' }));
+      visual.update(aimedState(6, { x: 8, y: -6, z: 0 }, { chuteDeployed: true, phase: 'descent' }));
+      const nose = noseDir(mesh);
+      const speed = Math.hypot(8, -6);
+      const dot = nose.dot(new THREE.Vector3(8 / speed, -6 / speed, 0));
+      expect(dot).toBeGreaterThan(0.98); // nose-over: follows the fall, no canopy hang
+      expect(nose.y).toBeLessThan(0);
+    } finally { visual.dispose(); }
+  });
+
   it('ignores near-zero velocity (no defined direction)', () => {
     const scene = new THREE.Scene();
     const mesh = buildRocketMesh(data);

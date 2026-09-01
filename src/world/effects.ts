@@ -12,10 +12,12 @@ const TRAIL_SECONDS = 1.5;
 const TRAIL_MAX = 256;
 
 // Attitude tracking: the nose follows the velocity vector while flying freely
-// (weathercocking) and points back up once the chute is out — the rocket hangs
-// nose-up from the canopy while descending.
+// (weathercocking). Once a canopy is out AND the rocket is actually falling it
+// hangs nose-up from the canopy; chuteless recoveries (streamer/tumble) keep
+// following the airflow through apogee instead of snapping upright.
 const ATTITUDE_RATE = 5;          // slerp responsiveness, 1/s
 const ATTITUDE_MIN_SPEED = 1.5;   // m/s below which there is no direction to follow
+const NOSE_UP_VY = 1;             // m/s; below this vertical speed a canopy hang begins
 const UP = new THREE.Vector3(0, 1, 0);
 
 interface Debris { mesh: THREE.Mesh; vel: THREE.Vector3; }
@@ -42,7 +44,7 @@ export class RocketVisual {
   constructor(
     private readonly scene: THREE.Scene,
     private readonly rocket: THREE.Group,
-    data: Rocket,
+    private readonly data: Rocket,
   ) {
     scene.add(rocket);
     this.flame = buildFlame(data);
@@ -104,7 +106,11 @@ export class RocketVisual {
     if (dt <= 0) return; // sim clock frozen between steps — nothing new to track
 
     const target = new THREE.Vector3(v.x / speed, v.y / speed, v.z / speed);
-    if (state.chuteDeployed) target.set(0, 1, 0); // hang nose-up from the canopy
+    // Hang nose-up only under a real canopy, and only once the fall has begun:
+    // ejecting mid-climb (angled launches) must not snap the nose vertical.
+    if (state.chuteDeployed && this.data.chuteDiameterM > 0 && v.y < NOSE_UP_VY) {
+      target.set(0, 1, 0);
+    }
     const desired = new THREE.Quaternion().setFromUnitVectors(UP, target);
     const k = 1 - Math.exp(-ATTITUDE_RATE * dt);
     this.rocket.quaternion.slerp(desired, k);
