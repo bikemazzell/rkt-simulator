@@ -1,4 +1,4 @@
-import type { FlightState, SimConfig } from './types';
+import type { FlightState, RecoveryDevice, SimConfig } from './types';
 import { G } from './integrator';
 import { randRange, type Rng } from './rng';
 
@@ -15,8 +15,11 @@ export function catoProbability(config: SimConfig): number {
   return Math.min(0.9, (overload - 1) * 0.8);
 }
 
-export function chuteFailProbability(config: SimConfig): number {
-  return config.rocket.chuteDiameterM === 0 ? TUMBLE_CHUTE_FAIL : BASE_CHUTE_FAIL;
+// Fail odds key on the resolved device list (rolled before this runs): a
+// rocket that recovered a parachute has the gentle 4% chance, everything
+// else (streamer/tumble/rotor/wing complexity) tangles more often.
+export function chuteFailProbability(devices: RecoveryDevice[] | undefined): number {
+  return devices?.includes('parachute') ? BASE_CHUTE_FAIL : TUMBLE_CHUTE_FAIL;
 }
 
 export function tipOffProbability(config: SimConfig): number {
@@ -57,12 +60,14 @@ export function applyOutcome(
     }
     return;
   }
-  // ejection (fired once at burnout + delay, only after liftoff)
-  if (rng() < chuteFailProbability(config)) {
+  // ejection (fired once at burnout + delay, only after liftoff); the recovery
+  // list is already resolved on the state at this point
+  if (rng() < chuteFailProbability(state.recoveryDeployed)) {
     if (state.outcome === null) state.outcome = 'chute-fail';
     state.chuteDeployed = false;
+    state.recoveryDeployed = []; // nothing came out: ballistic
   } else {
-    state.chuteDeployed = true; // recovery deployed (chute, or tumble/streamer)
+    state.chuteDeployed = true; // recovery deployed (chute/streamer/rotor/wings)
     if (state.outcome === null) state.outcome = 'nominal';
   }
 }

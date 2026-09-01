@@ -13,13 +13,14 @@ import { Simulation, DT } from './sim/simulation';
 import { aimDirection, normalizeAim, AIM_DEFAULT, type AimAngles } from './sim/aim';
 import { Sfx } from './audio/sfx';
 import { Ui } from './ui/ui';
-import { rocketById, compatibleMotors } from './data/rockets';
+import { rocketById, compatibleMotors, rockets } from './data/rockets';
 import { motorById } from './data/motors';
 import { scoreChallenge } from './sim/challenge';
 import { mulberry32 } from './sim/rng';
+import { RECOVERY_DEVICES } from './sim/recovery';
 import { isWeatherKind } from './world/weather';
-import { Euler, MathUtils, type Object3D } from 'three';
-import type { EnvParams, ChallengeConfig, Rocket } from './sim/types';
+import type { EnvParams, ChallengeConfig, Rocket, RecoveryDevice } from './sim/types';
+import { MathUtils, Object3D, Euler } from 'three';
 
 const host = document.getElementById('app')!;
 const scene = new SceneManager(host);
@@ -47,6 +48,23 @@ const seedParam = qs.get('seed');
 const launchSeedOverride = seedParam !== null && seedParam !== '' && !Number.isNaN(Number(seedParam))
   ? Number(seedParam) >>> 0
   : undefined;
+// ?recovery=<device[,device...]> forces every rocket's recovery devices (debug
+// override for CDP verification); unknown tokens are dropped, and a list with
+// no valid tokens is ignored entirely.
+const recoveryParam = qs.get('recovery');
+const recoveryOverride = recoveryParam !== null && recoveryParam !== ''
+  ? [...new Set(recoveryParam.split(',').map((t) => t.trim()).filter((d): d is RecoveryDevice =>
+    (RECOVERY_DEVICES as readonly string[]).includes(d)))]
+  : undefined;
+const forcedRecovery = recoveryOverride && recoveryOverride.length > 0 ? recoveryOverride : undefined;
+if (forcedRecovery) {
+  for (const r of rockets) {
+    r.recovery = [...forcedRecovery];
+    // A forced parachute needs a real canopy: chuteless rockets (streamer/tumble
+    // designs) would otherwise get an Infinity sink and a degenerate micro-canopy.
+    if (forcedRecovery.includes('parachute') && r.chuteDiameterM <= 0) r.chuteDiameterM = 0.35;
+  }
+}
 function applyDebugCam(): void {
   if (camParts && camParts.length >= 3 && camParts.slice(0, 3).every(Number.isFinite)) {
     // Orbit mode, or the follow-cam would drag this view back to the rocket.
@@ -64,6 +82,7 @@ if (qs.get('debug') === '1') {
     get sim() { return sim; },
     get groundAt() { return launchGroundAt; },
     get aim() { return { ...aim }; },
+    get recoveryOverride() { return forcedRecovery ? [...forcedRecovery] : undefined; },
     setAim(next: AimAngles) {
       // Capture before touching the controller: each set() fires the change
       // callback, which reassigns `aim` from the half-updated controller.
@@ -339,7 +358,7 @@ function finish(): void {
   if (!sim || !current) return;
   const summary = sim.summary();
   summary.challenge = scoreChallenge(current.challenge, current.params, summary, sim.state.position);
-  const crashed = summary.outcome === 'cato' || summary.outcome === 'chute-fail';
+  const crashed = summary.outcome === 'cato' || summary.outcome === 'chute-fail' || summary.outcome === 'hard-landing';
   sfx.play(crashed ? 'boom' : 'chute');
   ui.setLaunchEnabled(true);
   // Let the explosion play before the summary covers the scene.

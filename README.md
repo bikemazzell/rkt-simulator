@@ -8,8 +8,14 @@ procedural terrain.
 ## Features
 
 - **Physics-first simulation** — deterministic, seeded flights: thrust curves,
-  atmospheric drag, wind and gusts, tipping, parachute recovery, CATO and
-  crash outcomes. Fixed-timestep integration (frame-rate independent).
+  atmospheric drag, wind and gusts, tipping, CATO and crash outcomes.
+  Fixed-timestep integration (frame-rate independent).
+- **Five recovery devices** — parachute, streamer, tumble, helicopter, and
+  glider, parsed from the real Estes descriptions (combos like the Space
+  Shuttle's parachute + glider fly both). Streamers flutter, rotors spin the
+  rocket in a spiral, gliders bank in a circle, and unspecified rockets roll a
+  random device at ejection. The rocket selector hints the recovery
+  ("Recovery: Parachute + Glider").
 - **True real-world scale** — 1 world unit = 1 meter. Rockets render at their
   catalogue size (0.27 m to 2.05 m) on a bullseye pad with a 1 m launch rod
   (orange tip), surrounded by everyday **scale-reference objects**
@@ -45,8 +51,8 @@ procedural terrain.
   - shimmering blocky water: ponds, alpine lake, open sea, bathtub suds
   (in the bathtub the pad floats at the water surface, suds and all)
   - weather: rain, snow, thunderstorms with lightning and tightened fog
-  - fading launch trail behind every flight, chute and burst effects
-    scaled to the rocket
+  - fading launch trail behind every flight; chute, streamer, rotor, and
+    glider-wing recovery visuals + burst effects, all scaled to the rocket
 - **Challenges** — target-altitude (with an amber altitude ring marking the
   target in the sky), target-landing-zone (scored) flights.
 - **Audio** — lightweight synthesized SFX, muted by default.

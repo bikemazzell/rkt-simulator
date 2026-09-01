@@ -586,3 +586,74 @@ tumble = no-assist fall. Sequence: plan → review (qwen + deepseek) → fold �
    random distribution over N launches, combo visuals, smoke, screenshots.
 7. Docs README + spec; verification notes.
 8. Second review (deepseek + qwen) on the diff → fold fixes → push/deploy.
+
+### Folded review findings (deepseek + qwen, 2026-09-01) — plan amendments
+Deepseek: APPROVE WITH CHANGES (verdict malformed as '## VERDICT' header; content complete).
+Qwen: APPROVE WITH CHANGES (proper verdict line).
+
+1. BOTH (qwen BLOCKER + deepseek IMPORTANT, verified in data): generator zeroed
+   chuteDiameterM on /streamer|tumble/ or mass<0.03 even when a parachute is in
+   the list (Mayhem = parachute+tumble prose, chuteDiameterM 0 today). AMEND:
+   derive chuteDiameterM from the parsed list — parachute ∈ recovery →
+   round(0.25 + rng*0.3, 3), else 0; the old mass heuristic is REMOVED. Pins
+   assert lists AND chuteDiameterM (mayhem > 0, mavericks = 0).
+2. QWEN BLOCKER (verified): Mavericks' only "parachute" is the comparative
+   "less drift than a parachute" → parser needs a context filter: skip keyword
+   occurrences whose preceding ~24 chars match /than|less|more|rather|instead
+   of|without|no /i. Mavericks pins ['streamer'].
+3. QWEN IMPORTANT (adopted over deepseek's ordering note): the random-recovery
+   roll draws from an INDEPENDENT stream mulberry32(seed ^ 0x5eed), never
+   this.rng — ignition/ejection/wind draws and pinned seed tests unchanged.
+   Glider circle phase/direction also from that stream (drawn at ejection).
+4. BOTH: chuteFailProbability keys on the RESOLVED devices: 0.04 when
+   parachute ∈ resolved else 0.15. Order at ejection: resolve (indep stream)
+   BEFORE the fail roll (this.rng).
+5. BOTH: helicopter and streamer drag areas are MASS-SCALED at ejection:
+   A = 2mg/(rho * Cd * v_target^2) with post-burn mass; v_target: helicopter
+   3.5 m/s (Cd 1.3), streamer 9 m/s (Cd 1.1). Test bands asserted across a
+   light AND heavy fixture from the real rocket set.
+6. DEEPSEEK: glider engages only once velocity.y < 0; the banked circle's
+   center advects with windAt so the glider drifts downwind like everything
+   else.
+7. QWEN: glider override writes consistent VELOCITY (tangent, 8 m/s) into
+   state each step so attitude (effects) and impactSpeed stay correct; blend-in
+   heading when apogee speed < 1.5: horizontal component of the launch aim,
+   fallback +X. Fail semantics: any failed recovery (incl. glider/heli) falls
+   back to ballistic body drag (current chute-fail path).
+8. DEEPSEEK: dominant device is COMPUTED at ejection — per-device sink rate
+   with post-burn mass (chute: sqrt(2mg/(rho*Cd*A_chute)); heli 3.5; glider
+   2.7; streamer 9; tumble body-area×14 terminal) → argmin wins physics; all
+   devices render. No magic ordering constant.
+9. QWEN IMPORTANT: hard-landing outcome label — 'chute-fail' only when a
+   parachute was the dominant device; otherwise new outcome 'hard-landing'
+   (UI/sfx treat like a crash; check ui.ts union during wiring).
+10. QWEN minor (adopted/notes): impactSpeed is vertical-only — documented in
+    spec; glider slow sink makes MAX_FLIGHT_TIME 600 more reachable — noted,
+    pre-existing guard stays; Solo's "pod that glides" — /glid(e|r)/ verb
+    form IS parsed as glider (feature, not false positive); ?recovery=
+    unknown tokens are ignored.
+11. DEEPSEEK minor: in-game "tumble" = stabilized high-drag fall (body×14);
+    documented as such — semantic drift accepted explicitly.
+
+## Feature round 7 — recovery devices — verification + reviews (2026-09-01)
+
+- Plan reviews: deepseek + qwen APPROVE WITH CHANGES, all findings folded
+  (chute-from-list derivation, comparative-clause parser filter, independent
+  recovery rng stream, mass-scaled device areas, computed dominant device,
+  descending-only glider capture, 'hard-landing' outcome, etc).
+- Quality: typecheck clean, 305 tests / 39 files, build OK (pre-existing
+  >500kB chunk warning only).
+- CDP (own swiftshader headless on 9223): per-device flights landed in
+  expected sink bands (parachute 5.6, streamer 9.0, heli 2.6, glider 2.7
+  impact m/s; tumble 20.5 → hard-landing by design); combo visuals render all
+  devices (chute+wings, streamer+rotor both visible + animated mid-descent);
+  random resolution at ejection (seed 101 → tumble); ?recovery= junk tokens
+  dropped; zero console errors; smoke OK.
+- Impl reviews (second round per user): deepseek APPROVE (4 MINOR, 3 folded:
+  forced-parachute chute patch, RocketVisual dispose traversal, regex \b
+  anchors); qwen APPROVE WITH CHANGES (1 IMPORTANT + 5 MINOR, ALL 6 folded:
+  glider dir=-1 capture phase π-off, comparative regex extended, attitude dt
+  advance on early returns, stale comment, real glide-speed assert, Set dedupe).
+- Data: 142 rockets regenerated with recovery lists (72 parachute / 12
+  streamer / 1 tumble / 1 helicopter / 4 glider / 6 combos / 57 unspecified
+  → Random).

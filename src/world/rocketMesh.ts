@@ -43,8 +43,9 @@ export function buildRocketMesh(rocket: Rocket): THREE.Group {
 }
 
 export function buildParachute(color = 0xff5533, chuteDiameterM = 1): THREE.Mesh {
-  // Tumble-recovery rockets have chuteDiameterM 0; keep the geometry valid
-  // (the canopy stays hidden for them — chuteDeployed never flips).
+  // Tumble/streamer-only rockets have chuteDiameterM 0; keep the geometry valid
+  // (the canopy stays hidden because visibility keys on the resolved device
+  // list, not on this builder's diameter).
   const radiusM = Math.max(0.05, chuteDiameterM / 2);
   const geo = new THREE.SphereGeometry(radiusM, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
   const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide }));
@@ -61,4 +62,60 @@ export function buildFlame(rocket: Rocket): THREE.Mesh {
   // Bake the nozzle position: base flush with y=0, tip hanging at -len.
   mesh.position.y = -len / 2;
   return mesh;
+}
+
+/** Flapping streamer strands: crepe ribbons standing above the nose, true-scale. */
+export function buildStreamer(rocket: Rocket): THREE.Group {
+  const g = new THREE.Group();
+  g.userData.isStreamer = true;
+  const len = Math.max(0.5, rocket.look.bodyLengthM * 1.5);
+  const width = Math.max(0.025, rocket.diameterM * 0.9);
+  const mat = new THREE.MeshLambertMaterial({ color: 0xff8c1a, side: THREE.DoubleSide });
+  for (let i = 0; i < 2; i++) {
+    const ribbon = new THREE.Mesh(new THREE.BoxGeometry(width, len, 0.004), mat);
+    // Hang the strand from its top so the flap pivot reads naturally.
+    ribbon.geometry.translate(0, -len / 2, 0);
+    ribbon.position.set(i === 0 ? width * 0.6 : -width * 0.6, 0, 0);
+    ribbon.rotation.z = i === 0 ? 0.18 : -0.18;
+    g.add(ribbon);
+  }
+  return g;
+}
+
+/** Helicopter recovery rotor: two crossed blades on a hub at the nose tip. */
+export function buildRotor(rocket: Rocket): THREE.Group {
+  const g = new THREE.Group();
+  g.userData.isRotor = true;
+  const bladeLen = Math.min(1.4, Math.max(0.5, rocket.look.bodyLengthM * 1.5));
+  const bladeW = Math.max(0.02, rocket.diameterM * 0.5);
+  const bladeMat = new THREE.MeshLambertMaterial({ color: 0xd0d4da, side: THREE.DoubleSide });
+  for (let i = 0; i < 2; i++) {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(bladeLen, 0.004, bladeW), bladeMat);
+    blade.rotation.y = (i * Math.PI) / 2; // crossed pair
+    // A touch of pitch so the spin reads as autorotation.
+    blade.rotation.z = 0.08;
+    g.add(blade);
+  }
+  const hub = new THREE.Mesh(
+    new THREE.CylinderGeometry(Math.max(0.006, rocket.diameterM * 0.18), Math.max(0.006, rocket.diameterM * 0.18), 0.012, 8),
+    new THREE.MeshLambertMaterial({ color: 0x3d3d42 }),
+  );
+  g.add(hub);
+  return g;
+}
+
+/** Pop-out glider wings: a main wing at mid-body plus a small canard near the nose. */
+export function buildGliderWings(rocket: Rocket): THREE.Group {
+  const g = new THREE.Group();
+  g.userData.isGliderWings = true;
+  const span = Math.min(1.8, Math.max(0.7, rocket.look.bodyLengthM * 2));
+  const chord = Math.max(0.06, rocket.diameterM * 1.2);
+  const mat = new THREE.MeshLambertMaterial({ color: 0xf5f5dc, side: THREE.DoubleSide });
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(span, 0.004, chord), mat);
+  wing.position.y = rocket.look.bodyLengthM * 0.55;
+  g.add(wing);
+  const canard = new THREE.Mesh(new THREE.BoxGeometry(span * 0.5, 0.003, chord * 0.6), mat);
+  canard.position.y = rocket.look.bodyLengthM * 0.85;
+  g.add(canard);
+  return g;
 }

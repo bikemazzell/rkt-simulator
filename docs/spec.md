@@ -124,7 +124,8 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
 - The selected environment is shown immediately (pre-launch preview) and updates
   when the rocket or environment selection changes.
 - URL overrides for verification: `?seed=<uint>` pins the launch seed for
-  reproducible flights (see also `?env`, `?weather`, `?tod`, `?cam`, `?debug`).
+  reproducible flights; `?recovery=<device[,device...]>` forces the recovery
+  devices (see §7.3) (see also `?env`, `?weather`, `?tod`, `?cam`, `?debug`).
 
 ## 5. Rockets
 
@@ -141,8 +142,9 @@ Each rocket record:
 | `massEmptyKg`     | number    | Dry mass (no motor)                                  |
 | `diameterM`      | number    | Body tube diameter → reference area for drag         |
 | `dragCoefficient`| number    | Cd (dimensionless)                                   |
-| `chuteDiameterM` | number    | Parachute canopy diameter (0 = streamer/tumble)      |
+| `chuteDiameterM` | number    | Parachute canopy diameter (0 = no parachute)          |
 | `chuteCd`        | number    | Parachute drag coefficient                           |
+| `recovery`       | device[]  | Recovery devices from the product description ([] = random at ejection) |
 | `recommendedMotors` | string[] | Motor ids that fit this rocket                     |
 | `maxMotorImpulse` | number   | Total impulse (N·s) above which CATO risk rises      |
 | `look`           | object    | Low-poly mesh params (body length, fin shape, colors)|
@@ -189,8 +191,10 @@ Forces each step:
   liftoff (tip-off), not as thrust vectoring.
 - **Gravity:** `m·g`, `g = 9.81 m/s²`.
 - **Drag:** `½·ρ·v²·Cd·A`, opposing air-relative velocity. `A` from body diameter
-  during ascent/coast; from parachute (`chuteDiameterM`, `chuteCd`) once the chute
-  has deployed.
+  during ascent/coast; once recovery has deployed, from the dominant recovery
+  device (see §7.3): parachute canopy (`chuteDiameterM`, `chuteCd`), a
+  mass-scaled streamer, a rotor disc sized for a ~3.5 m/s helicopter sink, or an
+  inflated body area for tumble.
 - **Wind:** a horizontal wind vector (constant + gust component) applied through
   drag, producing lateral drift.
 
@@ -216,7 +220,8 @@ idle → boost → coast → apogee → descent → landed
   space for the whole burn.
 - **coast:** burnout to apogee (vertical velocity > 0).
 - **apogee:** vertical velocity crosses zero.
-- **descent:** falling under parachute (or ballistic if the chute failed).
+- **descent:** falling under the deployed recovery device — or ballistic if the
+  deployment failed.
 - **landed:** rocket returns to ground height with a survivable impact speed.
 - **failed:** a failure outcome (CATO, hard landing/crash, or never leaving the
   pad) ended the flight.
@@ -226,6 +231,34 @@ Recovery is driven by the **ejection charge**, which fires once at
 delay deploys the chute near apogee; too short a delay deploys it while still
 ascending (a realistic drag penalty and lower apogee).
 
+### 7.3 Recovery devices (`recovery.ts`)
+
+Each rocket carries `recovery: RecoveryDevice[]` parsed from the Estes product
+prose (e.g. `['parachute', 'glider']` for the Space Shuttle). Rockets whose
+description names no device get `[]` — **Random**: a single device is rolled at
+ejection (seeded, weighted parachute .55 / streamer .20 / tumble .10 /
+helicopter .08 / glider .07), so unspecified rockets still vary flight to flight.
+The UI hint shows "Recovery: Parachute + Glider" or "Recovery: Random".
+
+Device models (combos render every device; physics uses the **dominant** device —
+the smallest computed sink rate at ejection mass):
+
+- **parachute:** canopy drag from catalogue `chuteDiameterM`/`chuteCd` (~4-6 m/s).
+- **streamer:** ribbon drag area `2mg/(ρ·Cd·v²)` tuned to ~9 m/s.
+- **tumble:** inflated body area (×14) — a stabilized fast fall that may still
+  land hard on heavy rockets.
+- **helicopter:** rotor drag area sized for ~3.5 m/s plus a lateral spiral
+  (radius ~1.5 m, period ~2.5 s), carried by the wind.
+- **glider:** kinematic override once descending — a banked circle (radius
+  ~15 m) at 8 m/s for a ~2.7 m/s sink; velocity is written into the flight
+  state (blended in over ~1 s), gravity/drag are bypassed for game feel.
+
+Deployment fails as one roll for the whole combo (0.04 when a parachute is
+present, 0.15 otherwise) → ballistic descent. A surviving descent that still
+hits above the hard-landing threshold is classified **hard-landing** (crash
+presentation), distinct from chute-fail. `?recovery=<device,...>` forces the
+device list for verification/debug; unknown tokens are dropped.
+
 ### 7.2 Outcomes (`outcomes.ts`)
 
 Condition- and probability-driven, using the seeded RNG:
@@ -234,11 +267,11 @@ Condition- and probability-driven, using the seeded RNG:
 - **CATO** (catastrophe at takeoff / motor explosion): raised probability when
   the chosen motor's impulse exceeds the rocket's `maxMotorImpulseNs`. Ends flight
   early with an explosion effect near the pad/low altitude.
-- **chute-fail:** parachute fails to deploy at ejection → ballistic descent and a
+- **chute-fail:** recovery fails to deploy at ejection → ballistic descent and a
   hard landing (phase `failed`, explosion effect). Probability small but non-zero,
-  higher for tumble-recovery rockets. A soft-recovery flight that nonetheless
-  strikes the ground above the hard-landing speed threshold is also classified as
-  a crash.
+  higher when no parachute is in the recovery list. A soft-recovery flight that
+  nonetheless strikes the ground above the hard-landing speed threshold is
+  classified as **hard-landing** (same crash presentation, distinct label).
 - **tip-off:** low thrust-to-weight at launch or high wind causes an unstable,
   angled, drifting trajectory (seeded lateral kick at liftoff). Wind speed and
   TWR both feed the tip-off probability.
@@ -327,7 +360,8 @@ is owned by the environment's `params` (there is no separate wind field on
   `sim/aim.ts` is the pure math (angle normalization, Euler 'XYZ' direction
   closed form pinned by a parity test against three).
 - **Effects:** rocket-proportioned flame during boost, parachute canopy on
-  recovery (radius from `chuteDiameterM`), explosion burst on CATO/hard
+  recovery (radius from `chuteDiameterM`), flapping streamer ribbons, spinning
+  rotor blades, deployed glider wings, explosion burst on CATO/hard
   landing, and a short fading trail line behind the rocket. Kept simple
   (sprites or small meshes), not a full particle engine.
 - **Camera:** OrbitControls for free look; a follow-cam mode that tracks the

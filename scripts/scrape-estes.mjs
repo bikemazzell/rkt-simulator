@@ -15,7 +15,7 @@
 // The one hard invariant kept is avgThrust === totalImpulse / burnTime, which the
 // catalog test enforces.
 
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -104,6 +104,31 @@ function colorsFromText(text, rng) {
   return { bodyColor: c(0), finColor: c(1), noseColor: c(2) };
 }
 
+// Recovery devices named in the copy, in canonical output order. An occurrence
+// is ignored when it sits in a comparison ("less drift than a parachute") so a
+// streamer-only kit whose prose merely mentions parachutes parses as streamer.
+const RECOVERY_KEYWORDS = [
+  ['parachute', /parachute/gi],
+  ['streamer', /streamer/gi],
+  ['tumble', /tumble/gi],
+  ['glider', /glid(?:e|es|ed|er)/gi],
+  ['helicopter', /helicopter/gi],
+];
+const COMPARATIVE_BEFORE = /\b(than|less|more|rather|instead of|without|no|compared to|vs\.?|versus|over)\b[\s][^.]{0,24}$/i;
+
+function parseRecovery(text) {
+  const found = [];
+  for (const [device, re] of RECOVERY_KEYWORDS) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const before = text.slice(Math.max(0, m.index - 32), m.index);
+      if (!COMPARATIVE_BEFORE.test(before)) { found.push(device); break; }
+    }
+  }
+  return found;
+}
+
 function buildRockets(products, motors) {
   const motorIds = new Set(motors.map((m) => m.id));
   const idByClass = (cls) => motors.filter((m) => m.class === cls).map((m) => m.id);
@@ -140,8 +165,11 @@ function buildRockets(products, motors) {
     }
     const maxMotorImpulseNs = Math.max(...recommendedMotors.map((id) => motors.find((m) => m.id === id).totalImpulseNs));
 
-    // Streamer/tumble recovery for the very light ones, parachute otherwise.
-    const streamer = massEmptyKg < 0.03 || /streamer|tumble/i.test(text);
+    // Recovery devices straight from the copy (comparisons filtered out). The
+    // chute diameter only exists for rockets that carry a parachute — or
+    // unspecified rockets, whose runtime random roll may hand them one.
+    const recovery = parseRecovery(text);
+    const hasChute = recovery.includes('parachute') || recovery.length === 0;
 
     let id = (p.handle || p.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')).replace(/^-+|-+$/g, '');
     while (usedIds.has(id)) id += '-x';
@@ -151,7 +179,8 @@ function buildRockets(products, motors) {
       id, name: p.title.replace(/^Estes\s+(Rockets:\s+)?/i, '').trim(),
       massEmptyKg: round(massEmptyKg, 4), diameterM,
       dragCoefficient: round(0.7 + rng() * 0.18, 3),
-      chuteDiameterM: streamer ? 0 : round(0.25 + rng() * 0.3, 3), chuteCd: 1.2,
+      recovery,
+      chuteDiameterM: hasChute ? round(0.25 + rng() * 0.3, 3) : 0, chuteCd: 1.2,
       recommendedMotors, maxMotorImpulseNs,
       look: {
         bodyLengthM, finCount: 3 + Math.floor(rng() * 2),
@@ -175,15 +204,20 @@ function motorsFile(motors) {
 function rocketsFile(rockets) {
   const rows = rockets.map((r) => {
     const L = r.look;
-    return `  { id: ${JSON.stringify(r.id)}, name: ${JSON.stringify(r.name)}, massEmptyKg: ${r.massEmptyKg}, diameterM: ${r.diameterM}, dragCoefficient: ${r.dragCoefficient}, chuteDiameterM: ${r.chuteDiameterM}, chuteCd: ${r.chuteCd}, recommendedMotors: ${JSON.stringify(r.recommendedMotors)}, maxMotorImpulseNs: ${r.maxMotorImpulseNs}, look: { bodyLengthM: ${L.bodyLengthM}, finCount: ${L.finCount}, bodyColor: ${hex(L.bodyColor)}, finColor: ${hex(L.finColor)}, noseColor: ${hex(L.noseColor)} } },`;
+    return `  { id: ${JSON.stringify(r.id)}, name: ${JSON.stringify(r.name)}, massEmptyKg: ${r.massEmptyKg}, diameterM: ${r.diameterM}, dragCoefficient: ${r.dragCoefficient}, recovery: ${JSON.stringify(r.recovery)}, chuteDiameterM: ${r.chuteDiameterM}, chuteCd: ${r.chuteCd}, recommendedMotors: ${JSON.stringify(r.recommendedMotors)}, maxMotorImpulseNs: ${r.maxMotorImpulseNs}, look: { bodyLengthM: ${L.bodyLengthM}, finCount: ${L.finCount}, bodyColor: ${hex(L.bodyColor)}, finColor: ${hex(L.finColor)}, noseColor: ${hex(L.noseColor)} } },`;
   });
   return `${banner}\nimport type { Rocket, Motor } from '../sim/types';\nimport { motorById } from './motors';\n\nexport const rockets: Rocket[] = [\n${rows.join('\n')}\n];\n\nexport function rocketById(id: string): Rocket | undefined {\n  return rockets.find((r) => r.id === id);\n}\n\nexport function compatibleMotors(rocket: Rocket): Motor[] {\n  return rocket.recommendedMotors\n    .map((id) => motorById(id))\n    .filter((m): m is Motor => m !== undefined);\n}\n`;
 }
 
 // --- main ---------------------------------------------------------------------
-const products = await fetchAll();
+// `--snapshot` regenerates from the stored raw snapshot instead of the live
+// catalogue, so data regeneration stays deterministic and offline-safe.
+const fromSnapshot = process.argv.includes('--snapshot');
+const products = fromSnapshot
+  ? JSON.parse(readFileSync(join(ROOT, 'data/estes-products.json'), 'utf8'))
+  : await fetchAll();
 mkdirSync(join(ROOT, 'data'), { recursive: true });
-writeFileSync(join(ROOT, 'data/estes-products.json'), JSON.stringify(products, null, 2));
+if (!fromSnapshot) writeFileSync(join(ROOT, 'data/estes-products.json'), JSON.stringify(products, null, 2));
 
 const motors = buildMotors(products);
 const rockets = buildRockets(products, motors);

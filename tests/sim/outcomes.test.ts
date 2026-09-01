@@ -57,12 +57,17 @@ describe('outcomes', () => {
     expect(failed).toBe(true);
   });
 
-  it('tumble-recovery rockets have higher chute-fail probability', () => {
+  it('recovery without a parachute has higher fail probability', () => {
     const withChute = makeTestConfig();
-    const tumble = makeTestConfig({
+    const chuteless = makeTestConfig({
       rocket: { ...makeTestConfig().rocket, chuteDiameterM: 0 },
     });
-    expect(chuteFailProbability(tumble)).toBeGreaterThan(chuteFailProbability(withChute));
+    // Key on the resolved device list (what applyOutcome sees at ejection).
+    expect(chuteFailProbability(['streamer'])).toBeGreaterThan(chuteFailProbability(['parachute']));
+    expect(chuteFailProbability(chuteless.rocket.recovery ?? [])).toBe(
+      chuteFailProbability(withChute.rocket.recovery ?? []),
+    );
+    expect(chuteFailProbability(undefined)).toBeGreaterThan(chuteFailProbability(['parachute']));
   });
 
   it('high wind raises tip-off probability', () => {

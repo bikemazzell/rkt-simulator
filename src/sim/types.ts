@@ -23,12 +23,17 @@ export interface RocketLook {
   noseColor: number;
 }
 
+/** Recovery device named in the catalogue copy (or rolled at ejection). */
+export type RecoveryDevice = 'parachute' | 'streamer' | 'tumble' | 'glider' | 'helicopter';
+
 export interface Rocket {
   id: string;
   name: string;
   massEmptyKg: number;
   diameterM: number;
   dragCoefficient: number;
+  /** Parsed recovery devices; empty = unspecified, rolled randomly per launch. */
+  recovery?: RecoveryDevice[];
   chuteDiameterM: number;
   chuteCd: number;
   recommendedMotors: string[];
@@ -39,7 +44,7 @@ export interface Rocket {
 export type FlightPhase =
   | 'idle' | 'boost' | 'coast' | 'apogee' | 'descent' | 'landed' | 'failed';
 
-export type Outcome = 'nominal' | 'cato' | 'chute-fail' | 'tip-off';
+export type Outcome = 'nominal' | 'cato' | 'chute-fail' | 'hard-landing' | 'tip-off';
 
 export interface Wind { base: Vec3; gust: number; }
 
@@ -53,6 +58,8 @@ export interface FlightState {
   apogee: number;
   maxSpeed: number;
   chuteDeployed: boolean;
+  /** Devices resolved at ejection (after the random roll for unspecified rockets). */
+  recoveryDeployed?: RecoveryDevice[];
   liftedOff: boolean;
   impactSpeed: number;
 }

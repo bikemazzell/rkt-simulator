@@ -14,6 +14,7 @@ export function initialFlightState(config: SimConfig): FlightState {
     apogee: 0,
     maxSpeed: 0,
     chuteDeployed: false,
+    recoveryDeployed: [],
     liftedOff: false,
     impactSpeed: 0,
   };

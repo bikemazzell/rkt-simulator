@@ -1,10 +1,17 @@
-import type { ChallengeConfig, FlightState, FlightSummary } from '../sim/types';
+import type { ChallengeConfig, FlightState, FlightSummary, RecoveryDevice } from '../sim/types';
 import { rockets, compatibleMotors } from '../data/rockets';
 import { motors } from '../data/motors';
 import { environments } from '../world/environments';
 import { describeSize, totalHeightM } from '../world/scaleRefs';
 import { formatAltitude, formatSpeed, formatLength, phaseLabel } from './format';
 import { Combo } from './combo';
+
+/** "Parachute + Glider" for a known device list, "Random" when unspecified. */
+export function formatRecovery(devices: RecoveryDevice[] | undefined): string {
+  if (!devices || devices.length === 0) return 'Random';
+  const cap = (d: string) => d[0].toUpperCase() + d.slice(1);
+  return devices.map(cap).join(' + ');
+}
 
 export interface UiHandlers {
   onLaunch(): void;
@@ -21,6 +28,7 @@ const OUTCOME_LABEL: Record<string, string> = {
   nominal: 'Nominal recovery',
   cato: 'CATO! Motor exploded',
   'chute-fail': 'Recovery failed — crash',
+  'hard-landing': 'Hard landing',
   'tip-off': 'Tip-off / unstable',
 };
 
@@ -50,6 +58,7 @@ export class Ui {
   private readonly hud = el('div', 'rkt-hud');
   private readonly summary = el('div', 'rkt-summary');
   private readonly sizeHint = el('p', 'rkt-hint');
+  private readonly recoveryHint = el('p', 'rkt-hint');
 
   constructor(host: HTMLElement, private readonly handlers: UiHandlers) {
     const panel = el('div', 'rkt-panel');
@@ -105,6 +114,7 @@ export class Ui {
     body.append(
       this.field('Rocket', this.rocketCombo.el),
       this.sizeHint,
+      this.recoveryHint,
       this.field('Motor', this.motorCombo.el),
       anyLabel,
       this.field('Environment', this.envSel),
@@ -133,6 +143,7 @@ export class Ui {
     const rocket = rockets.find((r) => r.id === this.rocketCombo.getValue()) ?? rockets[0];
     const total = totalHeightM(rocket);
     this.sizeHint.textContent = `Height ${formatLength(total)} — ${describeSize(total)}`;
+    this.recoveryHint.textContent = `Recovery: ${formatRecovery(rocket.recovery)}`;
   }
 
   private field(label: string, control: HTMLElement): HTMLElement {
