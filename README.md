@@ -10,6 +10,13 @@ procedural terrain.
 - **Physics-first simulation** — deterministic, seeded flights: thrust curves,
   atmospheric drag, wind and gusts, tipping, parachute recovery, CATO and
   crash outcomes. Fixed-timestep integration (frame-rate independent).
+- **True real-world scale** — 1 world unit = 1 meter. Rockets render at their
+  catalogue size (0.27 m to 2.05 m), standing on a thin blast plate with a
+  1 m launch rod, next to a row of everyday **scale-reference objects**
+  (wine bottle, dog, child, cow, car, person…) picked per rocket so its real
+  size reads at a glance. The rocket selector shows a human-scale hint
+  ("Height 41 cm — about as tall as a wine bottle"). Props, creatures, and
+  vegetation are real-sized to match (1.8 m villagers, 0.4 m grass…).
 - **Real Estes catalogue** — rockets and motors scraped from the manufacturer
   specs, with type-ahead search and compatibility filtering (or overload a
   rocket and see what happens).
@@ -23,8 +30,12 @@ procedural terrain.
   - day/night cycle: sun, square moon with craters, stars, animated sky dome
   - drifting clouds, wind-swayed trees/shrubs/grass, flowers
   - wandering villagers, cows/sheep/pigs, circling birds, bobbing dog
+  (all creature-sized: people 1.8 m, cows 1.45 m at the shoulder, gulls)
   - shimmering blocky water: ponds, alpine lake, open sea, bathtub suds
+  (in the bathtub the pad floats at the water surface, suds and all)
   - weather: rain, snow, thunderstorms with lightning and tightened fog
+  - fading launch trail behind every flight, chute and burst effects
+    scaled to the rocket
 - **Challenges** — target-altitude, target-landing-zone (scored) flights.
 - **Audio** — lightweight synthesized SFX, muted by default.
 
@@ -63,7 +74,8 @@ src/
              flight phases, outcomes, challenges (no Three.js imports)
   data/      rocket + motor catalogue (pure data)
   world/     Three.js scene: environments, terrain, sky, weather, water,
-             vegetation, creatures, clouds, effects (reads sim one-way)
+             vegetation, creatures, clouds, effects, true-scale rocket mesh
+             + scale-reference lineup (reads sim one-way)
   ui/        DOM overlay: selectors, HUD, flight summary
   audio/     synthesized sound effects
 tests/       vitest suites (sim, data, ui, world)

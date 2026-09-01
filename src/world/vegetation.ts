@@ -114,8 +114,8 @@ function makeShrub(rng: Rng, mats: FloraMats): THREE.Group {
 
 function makeFlower(rng: Rng, mats: FloraMats): THREE.Group {
   const g = new THREE.Group();
-  g.add(box(0.15, 0.9, 0.15, mats.stem, 0.45));
-  g.add(box(0.5, 0.45, 0.5, mats.pickFlower(rng), 1.05));
+  g.add(box(0.15, 0.35, 0.15, mats.stem, 0.175));
+  g.add(box(0.3, 0.25, 0.3, mats.pickFlower(rng), 0.45));
   return g;
 }
 
@@ -181,7 +181,7 @@ function buildGrass(
 ): void {
   const n = Math.min(count, GRASS_CAP);
   if (n <= 0) return;
-  const geo = new THREE.BoxGeometry(0.22, 0.9, 0.22);
+  const geo = new THREE.BoxGeometry(0.22, 0.4, 0.22);
   const mat = new THREE.MeshLambertMaterial({ color: GRASS_GREEN });
   const grass = new THREE.InstancedMesh(geo, mat, n);
   const m = new THREE.Matrix4();
@@ -193,7 +193,7 @@ function buildGrass(
   for (let i = 0; i < n; i++) {
     const p = spots[i];
     const y = heightAt ? heightAt(p.x, p.z) : groundY;
-    pos.set(p.x, y + 0.45, p.z);
+    pos.set(p.x, y + 0.2, p.z);
     q.setFromAxisAngle(new THREE.Vector3(1, 0, 0.3).normalize(), randRange(rng, -0.15, 0.15));
     scl.set(1, randRange(rng, 0.6, 1.4), 1);
     m.compose(pos, q, scl);

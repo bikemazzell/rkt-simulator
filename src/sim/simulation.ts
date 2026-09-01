@@ -43,7 +43,7 @@ export class Simulation {
     if (this.done) return;
     const s = this.state;
     const { rocket, motor, environment } = this.config;
-    const ground = environment.groundHeight;
+    const ground = environment.launchY ?? environment.groundHeight;
 
     if (s.phase === 'idle') {
       s.phase = 'boost';

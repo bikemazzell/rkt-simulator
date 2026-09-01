@@ -26,10 +26,11 @@ export class SceneManager {
     // Large far plane so high flights stay in view; near raised to 0.5 keeps
     // depth precision better than the old 0.1/5000 despite the bigger range.
     this.camera = new THREE.PerspectiveCamera(60, 1, 0.5, 15000);
-    this.camera.position.set(40, 30, 60);
+    this.camera.position.set(-3.5, 1.7, 6.5);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
+    this.controls.minDistance = 1; // allow close inspection of true-scale (<2 m) rockets
     this.resize();
     window.addEventListener('resize', () => this.resize());
 
@@ -63,7 +64,9 @@ export class SceneManager {
     if (this.heldKeys.has('q')) move.y += 1; // rise
     if (this.heldKeys.has('e')) move.y -= 1; // descend
     if (move.lengthSq() === 0) return;
-    const speed = Math.max(40, this.camera.position.distanceTo(this.controls.target) * 0.9);
+    // Pan speed scales with zoom distance so close-ups of a true-scale rocket
+    // stay controllable (1.5 m/s floor) while far shots still glide.
+    const speed = Math.max(1.5, this.camera.position.distanceTo(this.controls.target) * 0.9);
     move.normalize().multiplyScalar(speed * dt);
     this.camera.position.add(move);
     this.controls.target.add(move);
@@ -95,8 +98,8 @@ export class SceneManager {
   }
 
   reset(): void {
-    this.camera.position.set(40, 30, 60);
-    this.controls.target.set(0, 10, 0);
+    this.camera.position.set(-3.5, 1.7, 6.5);
+    this.controls.target.set(1.2, 0.8, 0);
     this.controls.update();
   }
 

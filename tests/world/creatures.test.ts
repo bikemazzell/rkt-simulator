@@ -103,3 +103,51 @@ describe('CreatureSystem on terrain', () => {
     }
   });
 });
+
+describe('creature real-world sizes', () => {
+  function heightOf(obj: THREE.Object3D): number {
+    obj.updateMatrixWorld(true);
+    const b = new THREE.Box3().setFromObject(obj);
+    return b.max.y - b.min.y;
+  }
+  function widthOf(obj: THREE.Object3D): number {
+    obj.updateMatrixWorld(true);
+    const b = new THREE.Box3().setFromObject(obj);
+    return b.max.x - b.min.x;
+  }
+
+  it('villagers stand about 1.8 m tall', () => {
+    const root = new THREE.Group();
+    const biome = biomeFor('park');
+    new CreatureSystem(root, biome, mulberry32(5), { groundY: 0, minR: 30, maxR: 250 });
+    for (let i = 0; i < biome.creatures.villagers; i++) {
+      expect(heightOf(root.children[i])).toBeGreaterThan(1.55);
+      expect(heightOf(root.children[i])).toBeLessThan(2.0);
+    }
+  });
+
+  it('animals match their kinds: cow 1.45 / sheep 0.95 / pig 0.9 shoulder', () => {
+    const root = new THREE.Group();
+    const biome = biomeFor('park');
+    new CreatureSystem(root, biome, mulberry32(5), { groundY: 0, minR: 30, maxR: 250 });
+    const animals = root.children.slice(biome.creatures.villagers, biome.creatures.villagers + biome.creatures.animals);
+    for (const a of animals) {
+      const h = heightOf(a);
+      expect(h).toBeGreaterThanOrEqual(0.75); // pig floor (0.9 * 0.92 jitter)
+      expect(h).toBeLessThanOrEqual(1.75);    // cow head-top ceiling (1.45 withers, head raised, +jitter)
+    }
+    // Kinds differ: not all animals are the same height.
+    const hs = animals.map(heightOf);
+    expect(Math.max(...hs) - Math.min(...hs)).toBeGreaterThan(0.3);
+  });
+
+  it('birds have gull-like wingspans (about 1.4-2.0 m)', () => {
+    const root = new THREE.Group();
+    new CreatureSystem(root, biomeFor('sea'), mulberry32(8), { groundY: 0, minR: 30, maxR: 700 });
+    for (const b of root.children) {
+      const span = widthOf(b);
+      expect(span).toBeGreaterThan(1.0);
+      expect(span).toBeLessThan(2.1);
+    }
+  });
+});

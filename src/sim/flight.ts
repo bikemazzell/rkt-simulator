@@ -4,7 +4,7 @@ import { vec } from './vec';
 export function initialFlightState(config: SimConfig): FlightState {
   return {
     time: 0,
-    position: vec(0, config.environment.groundHeight, 0),
+    position: vec(0, config.environment.launchY ?? config.environment.groundHeight, 0),
     velocity: vec(0, 0, 0),
     mass: config.rocket.massEmptyKg + config.motor.massTotalKg,
     phase: 'idle',

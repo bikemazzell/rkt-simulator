@@ -33,7 +33,7 @@ export function rooftopParams(rng: Rng): EnvParams {
   return { groundHeight: 12, wind: { base: windVec(rng, 2, 6), gust: 3 }, bounds: { radius: 250 }, targetZone: zone(rng, 250, 15) };
 }
 export function bathtubParams(rng: Rng): EnvParams {
-  return { groundHeight: 0, wind: { base: windVec(rng, 0, 1), gust: 0.5 }, bounds: { radius: 60 }, targetZone: zone(rng, 60, 8) };
+  return { groundHeight: 0, launchY: 2.5, wind: { base: windVec(rng, 0, 1), gust: 0.5 }, bounds: { radius: 60 }, targetZone: zone(rng, 60, 8) };
 }
 export function backyardDogParams(rng: Rng): EnvParams {
   return { groundHeight: 0, wind: { base: windVec(rng, 1, 3), gust: 2 }, bounds: { radius: 120 }, targetZone: zone(rng, 120, 12) };

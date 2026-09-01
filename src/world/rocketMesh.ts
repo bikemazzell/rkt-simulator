@@ -4,9 +4,10 @@ import type { Rocket } from '../sim/types';
 export function buildRocketMesh(rocket: Rocket): THREE.Group {
   const g = new THREE.Group();
   const L = rocket.look;
-  // Exaggerate diameter for visibility (rockets are thin at real scale).
-  const radius = Math.max(0.4, rocket.diameterM * 12);
-  const bodyLen = Math.max(3, L.bodyLengthM * 8);
+  // True scale: 1 world unit = 1 meter. The reference lineup beside the pad
+  // (and the sim) both read real dimensions, so no minimums here.
+  const radius = rocket.diameterM / 2;
+  const bodyLen = L.bodyLengthM;
 
   const body = new THREE.Mesh(
     new THREE.CylinderGeometry(radius, radius, bodyLen, 12),
@@ -34,19 +35,30 @@ export function buildRocketMesh(rocket: Rocket): THREE.Group {
     fin.rotation.y = -angle;
     g.add(fin);
   }
-  // Local Y of the nose tip, so recovery visuals can sit above any-size rocket.
+  // Local Y of the nose tip, plus the dims recovery/effect visuals need.
   g.userData.topY = bodyLen + radius * 3;
+  g.userData.radius = radius;
+  g.userData.bodyLen = bodyLen;
   return g;
 }
 
-export function buildParachute(color = 0xff5533): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(4, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-  return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide }));
+export function buildParachute(color = 0xff5533, chuteDiameterM = 1): THREE.Mesh {
+  // Tumble-recovery rockets have chuteDiameterM 0; keep the geometry valid
+  // (the canopy stays hidden for them — chuteDeployed never flips).
+  const radiusM = Math.max(0.05, chuteDiameterM / 2);
+  const geo = new THREE.SphereGeometry(radiusM, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide }));
+  mesh.userData.radiusM = radiusM;
+  return mesh;
 }
 
-export function buildFlame(): THREE.Mesh {
-  const geo = new THREE.ConeGeometry(0.5, 3, 8);
+export function buildFlame(rocket: Rocket): THREE.Mesh {
+  const radius = Math.max(0.012, (rocket.diameterM / 2) * 1.2);
+  const len = Math.max(0.1, rocket.look.bodyLengthM * 0.9);
+  const geo = new THREE.ConeGeometry(radius, len, 8);
   geo.rotateX(Math.PI); // point downward
   const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffa500 }));
+  // Bake the nozzle position: base flush with y=0, tip hanging at -len.
+  mesh.position.y = -len / 2;
   return mesh;
 }

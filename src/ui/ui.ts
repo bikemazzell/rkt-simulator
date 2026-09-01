@@ -2,7 +2,8 @@ import type { ChallengeConfig, FlightState, FlightSummary } from '../sim/types';
 import { rockets, compatibleMotors } from '../data/rockets';
 import { motors } from '../data/motors';
 import { environments } from '../world/environments';
-import { formatAltitude, formatSpeed, phaseLabel } from './format';
+import { describeSize, totalHeightM } from '../world/scaleRefs';
+import { formatAltitude, formatSpeed, formatLength, phaseLabel } from './format';
 import { Combo } from './combo';
 
 export interface UiHandlers {
@@ -47,12 +48,14 @@ export class Ui {
   private readonly speedBtn = el('button', 'rkt-btn', 'Speed: 1x');
   private readonly hud = el('div', 'rkt-hud');
   private readonly summary = el('div', 'rkt-summary');
+  private readonly sizeHint = el('p', 'rkt-hint');
 
   constructor(host: HTMLElement, private readonly handlers: UiHandlers) {
     const panel = el('div', 'rkt-panel');
 
     this.rocketCombo = new Combo('Search rockets…', (id) => {
       this.repopulateMotors();
+      this.updateSizeHint();
       this.handlers.onRocketChange(id);
     });
     this.motorCombo = new Combo('Search motors…', () => {});
@@ -96,6 +99,7 @@ export class Ui {
     const body = el('div', 'rkt-body');
     body.append(
       this.field('Rocket', this.rocketCombo.el),
+      this.sizeHint,
       this.field('Motor', this.motorCombo.el),
       anyLabel,
       this.field('Environment', this.envSel),
@@ -116,6 +120,14 @@ export class Ui {
     this.summary.hidden = true;
     host.append(panel, this.hud, this.summary);
     this.updateHudText('On Pad', 0, 0, 0);
+    this.updateSizeHint();
+  }
+
+  /** "Height 41 cm — about as tall as a wine bottle" under the rocket picker. */
+  private updateSizeHint(): void {
+    const rocket = rockets.find((r) => r.id === this.rocketCombo.getValue()) ?? rockets[0];
+    const total = totalHeightM(rocket);
+    this.sizeHint.textContent = `Height ${formatLength(total)} — ${describeSize(total)}`;
   }
 
   private field(label: string, control: HTMLElement): HTMLElement {

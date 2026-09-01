@@ -4,6 +4,7 @@ import { SceneManager } from './world/scene';
 import { environmentById } from './world/environments';
 import { makeParamsFor } from './world/environments/params';
 import { buildRocketMesh } from './world/rocketMesh';
+import { buildScaleLineup } from './world/scaleLineup';
 import { RocketVisual } from './world/effects';
 import { Simulation, DT } from './sim/simulation';
 import { Sfx } from './audio/sfx';
@@ -13,7 +14,7 @@ import { motorById } from './data/motors';
 import { scoreChallenge } from './sim/challenge';
 import { mulberry32 } from './sim/rng';
 import { isWeatherKind } from './world/weather';
-import type { EnvParams, ChallengeConfig } from './sim/types';
+import type { EnvParams, ChallengeConfig, Rocket } from './sim/types';
 
 const host = document.getElementById('app')!;
 const scene = new SceneManager(host);
@@ -87,6 +88,15 @@ function clearRocket(): void {
   if (previewMesh) { scene.scene.remove(previewMesh); previewMesh = null; }
 }
 
+// Real-size reference lineup next to the rocket so its scale reads at a glance.
+// Constrained per environment: the sea raft is only 16m wide, the post-resize
+// rooftop slab ~26m; the bathtub's whole joke is giant scale, so skip it there.
+function addScaleLineup(envId: string, params: EnvParams, rocket: Rocket): void {
+  if (envId === 'bathtub') return;
+  const maxX = envId === 'sea' ? 6.5 : envId === 'rooftop' ? 11 : undefined;
+  scene.worldGroup.add(buildScaleLineup(rocket, params.launchY ?? params.groundHeight, maxX));
+}
+
 // Render the selected environment with the rocket resting on the pad, before any
 // launch and after reset/selection changes, so the scene is never empty/black.
 function showPreview(): void {
@@ -104,12 +114,13 @@ function showPreview(): void {
     { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone', registerSystem: (sys) => scene.registerWorldSystem(sys), startPhase, weather: weatherOverride },
     params, mulberry32(PREVIEW_SEED),
   );
+  addScaleLineup(env.id, params, rocket);
 
   previewMesh = buildRocketMesh(rocket);
-  previewMesh.position.set(0, params.groundHeight, 0);
+  previewMesh.position.set(0, params.launchY ?? params.groundHeight, 0);
   scene.scene.add(previewMesh);
 
-  groundHeight = params.groundHeight;
+  groundHeight = params.launchY ?? params.groundHeight;
   finished = false;
   ui.setLaunchEnabled(true);
   ui.hideSummary();
@@ -132,12 +143,13 @@ function launch(): void {
     { scene: scene.scene, root: scene.worldGroup, showTargetZone: sel.challenge.type === 'landing-zone', registerSystem: (sys) => scene.registerWorldSystem(sys), startPhase, weather: weatherOverride },
     params, mulberry32(seed),
   );
+  addScaleLineup(env.id, params, rocket);
 
   sim = new Simulation({ rocket, motor, environment: params, seed, challenge: sel.challenge });
   const mesh = buildRocketMesh(rocket);
-  mesh.position.set(0, params.groundHeight, 0);
-  visual = new RocketVisual(scene.scene, mesh);
-  groundHeight = params.groundHeight;
+  mesh.position.set(0, params.launchY ?? params.groundHeight, 0);
+  visual = new RocketVisual(scene.scene, mesh, rocket);
+  groundHeight = params.launchY ?? params.groundHeight;
   finished = false;
   accumulator = 0;                  // discard any leftover fractional tick
   last = performance.now();         // reset timing baseline for this flight
@@ -163,7 +175,7 @@ function frame(now: number): void {
   const focus = sim
     ? sim.state.position
     : previewMesh
-      ? { x: previewMesh.position.x, y: previewMesh.position.y + 10, z: previewMesh.position.z }
+      ? { x: previewMesh.position.x, y: previewMesh.position.y + (previewMesh.userData.topY ?? 20) / 2, z: previewMesh.position.z }
       : { x: 0, y: 10, z: 0 };
   scene.render(focus);
   requestAnimationFrame(frame);

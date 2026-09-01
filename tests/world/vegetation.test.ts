@@ -76,11 +76,30 @@ describe('buildVegetation on terrain', () => {
     // Grass instances follow the terrain too.
     const grass = root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
     const a = grass.instanceMatrix.array as Float32Array;
+    const grassGeo = grass.geometry as THREE.BoxGeometry;
+    expect(grassGeo.parameters.height).toBeCloseTo(0.4, 5);
     for (let i = 0; i < grass.count; i += 37) {
       const x = a[i * 16 + 12];
       const y = a[i * 16 + 13];
       const z = a[i * 16 + 14];
-      expect(y).toBeCloseTo(heightAt(x, z) + 0.45, 5);
+      expect(y).toBeCloseTo(heightAt(x, z) + 0.2, 5);
+    }
+  });
+
+  it('flowers stand about half a metre tall', () => {
+    const root = new THREE.Group();
+    buildVegetation(root, biomeFor('park'), mulberry32(21), { groundY: 0, minR: 30, maxR: 250 });
+    const flowers = root.children.filter((c) => {
+      if (c instanceof THREE.InstancedMesh || c.children.length < 2) return false;
+      const first = (c.children[0] as THREE.Mesh).geometry as THREE.BoxGeometry;
+      return Math.abs(first.parameters.width - 0.15) < 1e-9; // stem box identifies a flower
+    });
+    expect(flowers.length).toBe(biomeFor('park').flora.flowers);
+    for (const f of flowers) {
+      f.updateMatrixWorld(true);
+      const b = new THREE.Box3().setFromObject(f);
+      expect(b.max.y - b.min.y).toBeGreaterThan(0.4);
+      expect(b.max.y - b.min.y).toBeLessThan(0.7);
     }
   });
 });

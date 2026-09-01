@@ -59,6 +59,8 @@ export interface FlightState {
 
 export interface EnvParams {
   groundHeight: number;
+  /** Height of the launch surface (pad/rocket base) when it differs from terrain — e.g. bathtub water surface. */
+  launchY?: number;
   wind: Wind;
   bounds: { radius: number };
   targetZone?: { center: Vec3; radius: number };

@@ -77,8 +77,16 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
   distance).
 - **Speed** control cycles the simulation rate 1x / 4x / 16x so descents under
   parachute do not take real minutes.
-- A **launch pad** marks the origin and the rocket rests on it; procedural props
-  keep a clear radius around the pad so nothing ever spawns on the rocket.
+- A **launch pad** (a thin ⌀3.2 m blast plate with a 1 m launch rod) marks the
+  origin and the rocket rests on it; procedural props keep a clear radius
+  around the pad so nothing ever spawns on the rocket.
+- **True scale.** One world unit = one meter. The rocket mesh is generated at
+  its real catalogue size, flanked by a row of 3–5 everyday scale-reference
+  objects (soda can, wine bottle, dog, child, cow, car, person, pickup truck,
+  tall person) chosen per rocket from a fixed ladder so the nearest rungs
+  below/above its height always appear (a person is always included). The
+  lineup is environment-aware — clamped onto the sea raft and the rooftop,
+  skipped in the giant bathtub, where the joke scale would break it.
 - Launch, Reset, Camera, Speed, and Mute buttons in the UI.
 - Keyboard: `Space` = launch/reset, `C` = toggle camera, `F` = cycle speed,
   `M` = mute, `WASD` = pan and `Q`/`E` = up/down (orbit mode).
@@ -210,9 +218,10 @@ a seed, it produces:
 
 - A **scene contribution:** blocky tiled terrain + props (Three.js), built in
   `world/` (see the world systems in section 9).
-- A **params bundle** (pure data, no Three.js): ground height at origin, wind
-  profile (base speed/direction + gust), world bounds, and an optional target
-  landing zone for challenges.
+- A **params bundle** (pure data, no Three.js): ground height at origin, an
+  optional **launch height** (`launchY`, e.g. the bathtub's pad floats at the
+  water surface above the tub floor), wind profile (base speed/direction +
+  gust), world bounds, and an optional target landing zone for challenges.
 
 Because the params bundle is pure data derived deterministically from the seed,
 the environment generator's *logic* is unit-testable without rendering.
@@ -265,12 +274,19 @@ is owned by the environment's `params` (there is no separate wind field on
   (`weatherFx.ts`, rolled from biome weights). The day/night clock persists
   across world rebuilds and is not scaled by simulation speed.
 - **Rocket mesh:** generated procedurally from the rocket's `look` params
-  (body cylinder, nose cone, fins, colors) in `rocketMesh.ts`.
-- **Effects:** particle-ish flame/smoke during boost, parachute canopy on
-  recovery, explosion burst on CATO/hard landing. Kept simple (sprites or small
-  meshes), not a full particle engine.
+  (body cylinder, nose cone, fins, colors) in `rocketMesh.ts` — at true scale
+  (body length and diameter in meters, no inflation).
+- **Scale lineup:** `scaleRefs.ts` holds the pure reference ladder and
+  `pickReferences` (nearest below/above the rocket's total height + person +
+  log-distance fills, with redundancy suppression); `scaleLineup.ts` builds
+  the blocky reference meshes, launch rod, and blast plate.
+- **Effects:** rocket-proportioned flame during boost, parachute canopy on
+  recovery (radius from `chuteDiameterM`), explosion burst on CATO/hard
+  landing, and a short fading trail line behind the rocket. Kept simple
+  (sprites or small meshes), not a full particle engine.
 - **Camera:** OrbitControls for free look; a follow-cam mode that tracks the
-  rocket smoothly. Toggle between them.
+  rocket smoothly. Framing defaults are tuned for meter-scale rockets
+  (near plane 0.5 m, min zoom 1 m, slow pan at close zoom).
 - **Loop:** `requestAnimationFrame` drives rendering; a fixed-step accumulator
   advances the simulation independently so physics is frame-rate independent.
 
@@ -278,7 +294,9 @@ is owned by the environment's `params` (there is no separate wind field on
 
 DOM overlay (not in-canvas) for simplicity:
 
-- Rocket selector (with a small spec readout), motor selector (filtered to the
+- Rocket selector (with a small spec readout and a **real-size hint**: exact
+  height plus a plain-language comparison, e.g. "about as tall as a wine
+  bottle"), motor selector (filtered to the
   rocket's compatible motors, or the full list when **allow any motor** is
   ticked — which lets the player overload a rocket and trigger a CATO),
   environment selector.

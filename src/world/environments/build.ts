@@ -52,8 +52,10 @@ function markTargetZone(root: THREE.Group, params: EnvParams): void {
 const LAUNCH_CLEARANCE = 30;
 
 function launchPad(groundHeight: number): THREE.Mesh {
+  // True-scale launch plate: 3.2 m across, 6 cm thick — big enough for the
+  // reference lineup's blast deflector, thin enough not to bury the rocket.
   const pad = new THREE.Mesh(
-    new THREE.CylinderGeometry(5, 5, 0.5, 20),
+    new THREE.CylinderGeometry(1.6, 1.6, 0.06, 20),
     new THREE.MeshLambertMaterial({ color: 0x30343a }),
   );
   // Centred on the surface so its top face sits clearly ABOVE the ground disc
@@ -255,14 +257,14 @@ function rooftop(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const biome = biomeFor('rooftop');
   const g = params.groundHeight;
   // Street level is far below; the house roof (top at g) is the launch surface.
-  // Keep the whole house footprint (corners at ~42m) inside the flat core.
-  const heightAt = base(ctx, params, rng, biome, { groundY: 0, flatten: [{ x: 0, z: 0, r: 88, y: 0 }] });
-  ctx.root.add(box(60, g, 60, 0xb5651d, 0, g / 2, 0)); // the house; roof top sits at g
-  // A few rooftop fixtures, kept on the roof (well inside its ±30 footprint).
-  ctx.root.add(box(6, 3, 6, 0x555555, -18, g + 1.5, 14));  // AC unit
-  ctx.root.add(box(4, 4, 4, 0x555555, 15, g + 2, -12));    // vent block
-  ctx.root.add(box(3, 6, 3, 0x777777, 20, g + 3, 18));     // chimney
-  flora(ctx, params, rng, biome, { groundY: g, minR: 8, maxR: 24 }); // planter hedges + tufts
+  // Keep the whole house footprint (corners at ~18 m) inside the flat core.
+  const heightAt = base(ctx, params, rng, biome, { groundY: 0, flatten: [{ x: 0, z: 0, r: 48, y: 0 }] });
+  ctx.root.add(box(26, g, 26, 0xb5651d, 0, g / 2, 0)); // the house; roof top sits at g
+  // A few rooftop fixtures, real-size and kept on the roof (inside its ±13 footprint).
+  ctx.root.add(box(2.2, 1.4, 2.2, 0x555555, -6, g + 0.7, 5));   // AC unit
+  ctx.root.add(box(1.5, 1.5, 1.5, 0x555555, 5.5, g + 0.75, -4)); // vent block
+  ctx.root.add(box(1, 2.2, 1, 0x777777, 6.5, g + 1.1, 6.5));   // chimney
+  flora(ctx, params, rng, biome, { groundY: g, minR: 4, maxR: 11 }); // planter hedges + tufts
   critters(ctx, params, rng, biome, { minR: 45, heightAt }); // street level, clear of the house
 }
 
@@ -299,28 +301,32 @@ function backyardDog(ctx: BuildContext, params: EnvParams, rng: Rng): void {
   const heightAt = base(ctx, params, rng, biome, {
     flatten: [{ x: birdbath.x, z: birdbath.z, r: 19, y: g }],
   });
-  // Fence ring, posts following the terrain.
-  const posts = 24;
+  // Fence ring, real-size pickets following the terrain.
+  const posts = 64;
   for (let i = 0; i < posts; i++) {
     const a = (i / posts) * Math.PI * 2;
     const px = Math.cos(a) * (params.bounds.radius - 5);
     const pz = Math.sin(a) * (params.bounds.radius - 5);
-    ctx.root.add(box(1, 6, 1, 0x8b5a2b, px, heightAt(px, pz) + 3, pz));
+    ctx.root.add(box(0.3, 1.8, 0.3, 0x8b5a2b, px, heightAt(px, pz) + 0.9, pz));
   }
   flora(ctx, params, rng, biome, { maxR: params.bounds.radius - 15, heightAt }); // hedges, flowers, grass
   water(ctx, rng, [{ radius: 9, x: birdbath.x, z: birdbath.z, y: g + 0.02 }]);
   const creatureSys = critters(ctx, params, rng, biome, { heightAt });
-  // An angry dog near the landing zone (flattened disc), head bobbing as it growls.
+  // An angry dog near the landing zone (flattened disc), real-size (~0.6 m at
+  // the shoulder), head bobbing as it growls.
   const dog = new THREE.Group();
-  dog.add(box(6, 3, 3, 0x7a4a1e, 0, g + 2.5, 0));   // body
-  const dogHead = box(3, 3, 3, 0x7a4a1e, 4, g + 3.5, 0); // head
+  dog.add(box(0.8, 0.3, 0.35, 0x7a4a1e, 0, g + 0.45, 0));     // body
+  const dogHead = box(0.3, 0.3, 0.3, 0x7a4a1e, 0.5, g + 0.55, 0); // head
   dog.add(dogHead);
-  dog.add(box(1, 3, 1, 0x7a4a1e, -3, g + 1.5, 0));  // tail
+  dog.add(box(0.35, 0.1, 0.1, 0x7a4a1e, -0.55, g + 0.5, 0));  // tail
+  for (const lx of [-0.28, 0.28]) for (const lz of [-0.12, 0.12]) {
+    dog.add(box(0.1, 0.3, 0.1, 0x7a4a1e, lx, g + 0.15, lz));  // legs
+  }
   const target = params.targetZone;
   dog.position.set(target ? target.center.x : 20, 0, target ? target.center.z : 0);
   dog.rotation.y = Math.PI; // head (at +x local) faces the pad at the origin
   ctx.root.add(dog);
-  creatureSys?.addHeadBob(dogHead, 0.18, 2.6);
+  creatureSys?.addHeadBob(dogHead, 0.06, 2.6);
 }
 
 export const environmentDefs: EnvironmentDef[] = [

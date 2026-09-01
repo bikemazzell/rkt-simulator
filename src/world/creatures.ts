@@ -72,11 +72,19 @@ function makeVillager(rng: Rng, mats: CreatureMats): THREE.Group {
   ];
   for (const arm of g.userData.limbs as THREE.Mesh[]) g.add(arm);
   g.rotation.y = rng() * Math.PI * 2;
+  // Unscaled the figure tops out at 2.7 m; scale to a real ~1.8 m person
+  // with slight per-villager height variety.
+  g.scale.setScalar((1.8 / 2.7) * randRange(rng, 0.94, 1.06));
   return g;
 }
 
 const ANIMAL_KINDS = ['cow', 'sheep', 'pig'] as const;
 type AnimalKind = (typeof ANIMAL_KINDS)[number];
+
+// Real shoulder heights: cow 1.45 m, sheep 0.95 m, pig 0.9 m. The unscaled
+// blocky body tops out at 1.8 m at the withers, so scale per kind (small
+// jitter keeps individuals from looking cloned).
+const ANIMAL_SCALE: Record<AnimalKind, number> = { cow: 1.45 / 1.8, sheep: 0.95 / 1.8, pig: 0.9 / 1.8 };
 
 function makeAnimal(rng: Rng, kind: AnimalKind, mats: CreatureMats): THREE.Group {
   const g = new THREE.Group();
@@ -96,7 +104,7 @@ function makeAnimal(rng: Rng, kind: AnimalKind, mats: CreatureMats): THREE.Group
   ];
   for (const leg of legs) g.add(leg);
   g.userData.limbs = legs;
-  g.scale.setScalar(randRange(rng, 0.8, 1.25));
+  g.scale.setScalar(ANIMAL_SCALE[kind] * randRange(rng, 0.92, 1.08));
   g.rotation.y = rng() * Math.PI * 2;
   return g;
 }
@@ -121,7 +129,7 @@ function makeBird(rng: Rng, mat: THREE.Material): { group: THREE.Group; wingL: T
   const wingR = new THREE.Mesh(wingGeoR, mat);
   wingR.position.set(0.25, 0.85, 0);
   g.add(wingL, wingR);
-  g.scale.setScalar(randRange(rng, 0.8, 1.3));
+  g.scale.setScalar(0.55 * randRange(rng, 0.85, 1.15)); // gull-sized, wingspan ~1.5 m
   return { group: g, wingL, wingR };
 }
 

@@ -28,4 +28,14 @@ describe('environment params', () => {
   it('landing-zone environments expose a target zone', () => {
     expect(makeParamsFor('park', 1).targetZone).toBeDefined();
   });
+  it('bathtub floats the pad above water via launchY without raising the floor', () => {
+    const p = makeParamsFor('bathtub', 1);
+    expect(p.groundHeight).toBe(0);
+    expect(p.launchY).toBe(2.5);
+  });
+  it('other environments do not define launchY', () => {
+    for (const id of ['park', 'urban', 'mountain', 'desert', 'sea', 'rooftop', 'backyard-dog']) {
+      expect(makeParamsFor(id, 1).launchY).toBeUndefined();
+    }
+  });
 });
