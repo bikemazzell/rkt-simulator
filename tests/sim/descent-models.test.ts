@@ -178,6 +178,30 @@ describe('per-device descent physics', () => {
     const { sim } = fly(r, D12, 42);
     expect(sim.state.recoveryDeployed).toHaveLength(1);
   });
+
+  it('explicit pure-tumble (Leaper-style) deploys passively and survives every seed', () => {
+    // BT-5-class toothpick on a short-impulse motor: recovery ['tumble'] must
+    // engage at burnout + ≤0.5 s (no ejection charge needed), never fail, and
+    // touch down under the crash threshold.
+    const A10_3 = motorById('A10-3')!;
+    const leaper = rocket({
+      massEmptyKg: 0.181, diameterM: 0.0137, dragCoefficient: 0.822,
+      chuteDiameterM: 0, recovery: ['tumble'], maxMotorImpulseNs: 2.5,
+    });
+    for (let seed = 1; seed <= 10; seed++) {
+      const { sim, trace } = fly(leaper, A10_3, seed);
+      const s = sim.state;
+      expect(s.recoveryDeployed).toEqual(['tumble']);
+      expect(s.chuteDeployed).toBe(true);
+      // deployed no later than burnout 0.25 s + capped delay 0.5 s + apogee
+      const deployT = trace.find((p) => p.t >= 0.75)!.t;
+      expect(deployT).toBeLessThan(1.5);
+      expect(s.phase).toBe('landed');
+      // 'tip-off' is an ignition roll that can coexist with a fine tumble landing.
+      expect(['nominal', 'tip-off']).toContain(s.outcome);
+      expect(s.impactSpeed).toBeLessThan(15);
+    }
+  });
 });
 
 void ({} as Rng);

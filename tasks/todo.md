@@ -657,3 +657,70 @@ Qwen: APPROVE WITH CHANGES (proper verdict line).
 - Data: 142 rockets regenerated with recovery lists (72 parachute / 12
   streamer / 1 tumble / 1 helicopter / 4 glider / 6 combos / 57 unspecified
   → Random).
+
+## Fix round 8 — Leaper data/visuals, chute attitude, crash-site wreck (2026-09-01)
+
+User reports: (1) Destination Mars Leaper barely visible + explodes constantly;
+(2) chute deploys while ascending — rocket tips along trajectory, canopy ahead;
+should hang nose-up + sway (wind tilts it); (3) crashed rocket leaves nothing —
+want wreck + gizmo at crash site (+ scorch/crater).
+
+### Diagnosis (verified)
+- Leaper: product prose recommends "A10-PT or A10-0T" (plugged/booster mini
+  motors, no delay). Scraper regex ([A-G]\d+-\d+) truncated 'A10-0T' → 'A10-0'
+  (delay 0) → ejection at burnout (0.25 s) while ascending ~10 m/s → canopy
+  snap + sad 4-7 m hops; random recovery on a 15 %-fail roll → frequent
+  'chute-fail' → explode animation. Body is BT-5 (⌀13.7 mm ≈ 2 px at the
+  default 7.5 m camera) — nearly invisible. Prose says "no parachute or
+  streamer needed… lands upright on tripod legs" — comparative filter
+  CORRECTLY leaves recovery [] (Random).
+- Attitude: nose-up requires v.y < 1 — at delay-0 ejection the rocket keeps
+  weathercocking with canopy leading (user report #2).
+- Crash: explode() hides the rocket permanently; finish() only rebuilds the
+  gizmo for phase 'landed'; relaunch branch only for 'landed'.
+
+### Fixes (TDD)
+1. Scraper: recs regex keeps T-suffix context — if a product's ONLY recs are
+   delay-0 motors, substitute the delayed sibling of the same class+thrust
+   (A10-0→A10-3) since solo flights need a delay; regen + pin Leaper A10-3.
+2. Camera: reset()/preview initial orbit distance scales with rocket height
+   (clamp ~2.2–7.6 m) so tiny rockets start close enough to see; keep true
+   scale (lineup still communicates size).
+3. Attitude: nose-up devices (chute/streamer/heli) → nose-up immediately when
+   deployed (drop the v.y<1 gate for them), lean into wind
+   (atan(wind/8), cap ~0.5 rad), gentle sway (sin ~0.06 rad); RocketVisual
+   receives the launch wind vector.
+4. Crash site: explode() now ends with a charred wreck (darkened materials,
+   lying tilt) instead of vanishing; scorch decal disc at the crash point;
+   finish() attaches the gizmo at failed flights too (no rod); relaunch
+   works from the wreck (fresh mesh at spot via launchOrigin, aim-driven).
+5. Docs + CDP verification (per-device flights, Leaper end-to-end, crash site).
+
+## Fix round 8 — verification (2026-09-01)
+
+Three user reports, all fixed and live-verified:
+
+1. **Destination Mars Leaper** — chain of root causes: (a) scraper regex
+   truncated the prose's plugged booster motor 'A10-0T' to 'A10-0' (delay 0 →
+   ejection at burnout); now an all-booster rec list substitutes the same-family
+   delayed sibling (A10-3) — 2 rockets changed. (b) The Leaper is a *designed*
+   no-assist rocket ("lands upright on its tripod legs") — the comparative
+   filter marked it Random; now 'no parachute/streamer' + 'lands upright/tripod/
+   legs' parses to ['tumble'], pure-tumble deploys passively at burn+0.5s,
+   tumbleArea floors at 0.02 m² (skinny BT-5 sink ≈11 m/s < crash), and
+   pure-tumble cannot fail to deploy. (c) 13.7mm body was ~2px at the old fixed
+   8.07m camera — adaptive reset distance (clamp 2.2–7.6m, scales with rocket
+   height) frames it at 4.68m. CDP: hints 'Height 49 cm — about as tall as a
+   dog' + 'Recovery: Tumble', motor A10-3, nominal landed flight.
+2. **Chute attitude while ascending** — nose-up devices now hang nose-up the
+   moment they deploy (no v.y gate), lean downwind (atan(wind/8) capped 0.5rad)
+   and sway (sin(t·1.3)·0.06rad). CDP: Anubis D12-3 ejection at vy +43 m/s →
+   nose.y = 1.00 instantly, holds through deceleration.
+3. **Crash sites** — explosions settle into a charred, toppled wreck + scorch
+   decal (radius 0.35–0.85 by impact speed); gizmo rebuilds at the crash site;
+   Launch re-flies from the wreck (fresh mesh via launchOrigin). CDP: scorch
+   r0.85 + gimbal + wreck at exact crash pos, relaunch boost from that spot.
+
+Quality: 310/310 tests (45 files), typecheck clean, build OK, smoke OK, zero
+console errors. Fix round (bug fixes) — no review panel per rounds 3/4/6
+precedent; CDP probe was the gate (evidence above).

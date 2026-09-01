@@ -33,10 +33,12 @@ procedural terrain.
   spin (angle labels update live), double-click (or double-tap) to type an
   exact angle. The launch rod tilts with the rocket; a horizontal aim ends in
   a rail tip-off. In flight the rocket weathercocks — the model points along
-  its direction of travel, nose-up again once the chute is out. After a soft
+  its direction of travel, and hangs nose-up the moment a canopy/rotor is
+  out (swaying gently, leaning downwind in strong wind). After a soft
   landing the gimbal reappears at the resting spot: press Launch to fly again
-  from exactly where it lies. Reset zeroes the aim, changing
-  rocket/env/challenge keeps it.
+  from exactly where it lies. Crashes leave a charred wreck, a scorch mark,
+  and a gizmo at the crash site — relaunch from the wreck, too. Reset zeroes
+  the aim, changing rocket/env/challenge keeps it.
 - **Eight environments** — park, urban, mountain, desert, open sea, rooftop,
   plus two funny ones: a giant bathtub (launch off a rubber duck) and a
   backyard guarded by an angry dog.

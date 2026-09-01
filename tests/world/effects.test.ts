@@ -114,18 +114,48 @@ describe('RocketVisual attitude', () => {
     } finally { visual.dispose(); }
   });
 
-  it('keeps the nose on the velocity vector while still ascending after ejection', () => {
+  it('hangs nose-up as soon as the canopy is out, even while still ascending', () => {
     const scene = new THREE.Scene();
     const mesh = buildRocketMesh(data);
     const visual = new RocketVisual(scene, mesh, data);
     try {
-      // Ejection fired at burnout+delay; at 45° aim the rocket is still
-      // climbing fast — the nose must keep following the arc, not snap up.
-      visual.update(aimedState(1, { x: 10, y: 10, z: 0 }, { chuteDeployed: true, phase: 'coast' }));
-      visual.update(aimedState(6, { x: 10, y: 10, z: 0 }, { chuteDeployed: true, phase: 'coast' }));
+      // Ejection fired mid-climb on a 45° arc — the rocket now hangs from the
+      // canopy, so the nose swings up immediately instead of following the arc.
+      visual.update(aimedState(1, { x: 10, y: 10, z: 0 }, { chuteDeployed: true, phase: 'coast', recoveryDeployed: ['parachute'] }));
+      visual.update(aimedState(6, { x: 10, y: 10, z: 0 }, { chuteDeployed: true, phase: 'coast', recoveryDeployed: ['parachute'] }));
       const nose = noseDir(mesh);
-      expect(nose.x).toBeGreaterThan(0.6);   // still 45° along the trajectory
-      expect(nose.y).toBeGreaterThan(0.6);
+      expect(nose.y).toBeGreaterThan(0.9); // canopy out → nose-up, ascent or not
+    } finally { visual.dispose(); }
+  });
+
+  it('leans the hanging nose downwind under a strong wind', () => {
+    const scene = new THREE.Scene();
+    const mesh = buildRocketMesh(data);
+    const visual = new RocketVisual(scene, mesh, data, { wind: { x: 6, z: 0 } });
+    try {
+      visual.update(aimedState(1, { x: 0, y: -5, z: 0 }, { chuteDeployed: true, phase: 'descent', recoveryDeployed: ['parachute'] }));
+      visual.update(aimedState(6, { x: 0, y: -5, z: 0 }, { chuteDeployed: true, phase: 'descent', recoveryDeployed: ['parachute'] }));
+      const nose = noseDir(mesh);
+      expect(nose.x).toBeGreaterThan(0.15); // tilted downwind (+x)
+      expect(nose.y).toBeGreaterThan(0.75); // but still mostly up
+    } finally { visual.dispose(); }
+  });
+
+  it('sways the hanging nose gently over time', () => {
+    const scene = new THREE.Scene();
+    const mesh = buildRocketMesh(data);
+    const visual = new RocketVisual(scene, mesh, data);
+    try {
+      const yaw = () => {
+        const side = new THREE.Vector3(1, 0, 0).applyQuaternion(mesh.quaternion);
+        return Math.atan2(side.z, side.x); // yaw around the (upright) nose axis
+      };
+      visual.update(aimedState(1, { x: 0, y: -5, z: 0 }, { chuteDeployed: true, phase: 'descent', recoveryDeployed: ['parachute'] }));
+      visual.update(aimedState(2, { x: 0, y: -5, z: 0 }, { chuteDeployed: true, phase: 'descent', recoveryDeployed: ['parachute'] }));
+      const y1 = yaw();
+      visual.update(aimedState(3, { x: 0, y: -5, z: 0 }, { chuteDeployed: true, phase: 'descent', recoveryDeployed: ['parachute'] }));
+      const y2 = yaw();
+      expect(Math.abs(y2 - y1)).toBeGreaterThan(0.005); // the sway moved it
     } finally { visual.dispose(); }
   });
 
@@ -168,5 +198,75 @@ describe('RocketVisual attitude', () => {
       const after = noseDir(mesh);
       expect(after.distanceTo(before)).toBeLessThan(0.001);
     } finally { visual.dispose(); }
+  });
+});
+
+describe('RocketVisual crash wreck', () => {
+  const UP = new THREE.Vector3(0, 1, 0);
+
+  function crash(imp: number): FlightState {
+    return {
+      ...state(5, 0, 'failed'),
+      outcome: 'chute-fail',
+      impactSpeed: imp,
+    } as FlightState;
+  }
+
+  function scorchOf(scene: THREE.Scene): THREE.Mesh | undefined {
+    return scene.children.find((c) => (c as THREE.Mesh).userData?.isScorch) as THREE.Mesh | undefined;
+  }
+
+  function runToWreck(visual: RocketVisual, imp: number, updates = 100): void {
+    visual.update(crash(imp)); // triggers explode()
+    for (let i = 0; i < updates; i++) visual.update(crash(imp)); // 1/60 per update → past 1.3 s
+  }
+
+  it('leaves a charred, tilted wreck and a scorch mark at the crash site', () => {
+    const scene = new THREE.Scene();
+    const mesh = buildRocketMesh(data);
+    const visual = new RocketVisual(scene, mesh, data);
+    try {
+      visual.update(crash(30));
+      expect(mesh.visible).toBe(false); // hidden while the burst plays
+      for (let i = 0; i < 100; i++) visual.update(crash(30));
+      expect(mesh.visible).toBe(true); // the wreck remains
+
+      // Materials charred: every coloured material is dark now.
+      let darkest = 1;
+      mesh.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.MeshLambertMaterial | undefined;
+        if (m && 'color' in m) darkest = Math.min(darkest, m.color.r + m.color.g + m.color.b);
+      });
+      expect(darkest).toBeLessThan(1.0);
+
+      // Lying on its side rather than upright.
+      const nose = UP.clone().applyQuaternion(mesh.quaternion);
+      expect(nose.y).toBeLessThan(0.7);
+
+      // Scorch decal on the ground, scaled with the impact.
+      const scorch = scorchOf(scene);
+      expect(scorch).toBeTruthy();
+      const r = (scorch!.geometry as THREE.CircleGeometry).parameters.radius;
+      expect(r).toBeGreaterThan(0.5);
+    } finally {
+      visual.dispose();
+    }
+    expect(scorchOf(scene)).toBeUndefined(); // decal disposed with the visual
+  });
+
+  it('scales the scorch radius with impact speed', () => {
+    const sceneA = new THREE.Scene();
+    const visualA = new RocketVisual(sceneA, buildRocketMesh(data), data);
+    runToWreck(visualA, 5);
+    const rSoft = (scorchOf(sceneA)!.geometry as THREE.CircleGeometry).parameters.radius;
+    visualA.dispose();
+
+    const sceneB = new THREE.Scene();
+    const visualB = new RocketVisual(sceneB, buildRocketMesh(data), data);
+    runToWreck(visualB, 25);
+    const rHard = (scorchOf(sceneB)!.geometry as THREE.CircleGeometry).parameters.radius;
+    visualB.dispose();
+
+    expect(rHard).toBeGreaterThan(rSoft);
   });
 });

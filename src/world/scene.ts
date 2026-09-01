@@ -5,6 +5,31 @@ import type { WorldSystem } from './system';
 
 export type CameraMode = 'orbit' | 'follow';
 
+// Default preview framing: where the camera sits and looks when a scene loads.
+const DEFAULT_POS: Vec3 = { x: -3.5, y: 1.7, z: 6.5 };
+const DEFAULT_TARGET: Vec3 = { x: 1.2, y: 0.8, z: 0 };
+
+/**
+ * Preview camera frame for a rocket of the given overall height (m). Without a
+ * hint this is the classic default; with one, the camera keeps the same
+ * viewing direction but moves closer so a true-scale 40 cm rocket still reads
+ * on screen (and a 2 m one doesn't overflow the frame). Distance clamps keep
+ * the frame sane at the size extremes.
+ */
+export function rocketFrame(heightHintM: number | undefined): { pos: Vec3; target: Vec3 } {
+  if (heightHintM === undefined) return { pos: { ...DEFAULT_POS }, target: { ...DEFAULT_TARGET } };
+  const dx = DEFAULT_POS.x - DEFAULT_TARGET.x;
+  const dy = DEFAULT_POS.y - DEFAULT_TARGET.y;
+  const dz = DEFAULT_POS.z - DEFAULT_TARGET.z;
+  const len = Math.hypot(dx, dy, dz);
+  const dist = Math.min(7.6, Math.max(2.2, heightHintM * 8));
+  const k = dist / len;
+  return {
+    pos: { x: DEFAULT_TARGET.x + dx * k, y: DEFAULT_TARGET.y + dy * k, z: DEFAULT_TARGET.z + dz * k },
+    target: { ...DEFAULT_TARGET },
+  };
+}
+
 export class SceneManager {
   readonly scene = new THREE.Scene();
   readonly worldGroup = new THREE.Group();
@@ -115,9 +140,10 @@ export class SceneManager {
     }
   }
 
-  reset(): void {
-    this.camera.position.set(-3.5, 1.7, 6.5);
-    this.controls.target.set(1.2, 0.8, 0);
+  reset(heightHint?: number): void {
+    const { pos, target } = rocketFrame(heightHint);
+    this.camera.position.set(pos.x, pos.y, pos.z);
+    this.controls.target.set(target.x, target.y, target.z);
     this.controls.update();
   }
 

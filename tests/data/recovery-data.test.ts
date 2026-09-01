@@ -23,6 +23,9 @@ describe('generated recovery data', () => {
     expect(by('roto-rocket').recovery).toEqual(['parachute', 'helicopter']);
     expect(by('mayhem').recovery).toEqual(['parachute', 'tumble']);
     expect(by('the-mavericks').recovery).toEqual(['streamer']);
+    // "No parachute or streamer needed — lands upright on its tripod legs":
+    // a designed no-assist landing parses as tumble, not unspecified/Random.
+    expect(by('destination-mars-leaper').recovery).toEqual(['tumble']);
   });
 
   it('derives chuteDiameterM from the parsed list (not a mass heuristic)', () => {

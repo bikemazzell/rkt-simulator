@@ -126,6 +126,16 @@ function parseRecovery(text) {
       if (!COMPARATIVE_BEFORE.test(before)) { found.push(device); break; }
     }
   }
+  // Some kits are designed to land with no recovery assist at all (e.g. the
+  // Leaper's tripod legs): "no parachute or streamer needed... lands upright
+  // on its legs". That is deliberate tumble recovery, not a Random roll.
+  if (
+    found.length === 0 &&
+    /no\s+(?:parachute|streamer)/i.test(text) &&
+    /lands\s+upright|tripod|its\s+legs/i.test(text)
+  ) {
+    return ['tumble'];
+  }
   return found;
 }
 
@@ -157,6 +167,23 @@ function buildRockets(products, motors) {
     // Recommended motors: designations named in the copy that we actually have.
     const recs = [...new Set((text.match(/(1\/8A|1\/4A|1\/2A|[A-G])\d+-\d+/g) || []))].filter((id) => motorIds.has(id));
     let recommendedMotors = recs.slice(0, 4);
+    // Booster/plugged motors (delay 0, e.g. the A10-0T the Leaper's copy names)
+    // have no ejection charge — useless as the only recommendation. If every
+    // named motor is delay-0, swap each for its delayed sibling (A10-0 → A10-3).
+    const allBooster = recommendedMotors.length > 0 && recommendedMotors.every((id) => {
+      const m = motors.find((mm) => mm.id === id);
+      return m && m.delayS === 0;
+    });
+    if (allBooster) {
+      recommendedMotors = [...new Set(recommendedMotors.map((id) => {
+        const prefix = id.split('-').slice(0, -1).join('-'); // 'A10-0' -> 'A10'
+        const sameFamily = motors.find((mm) => mm.id.startsWith(prefix + '-') && mm.delayS >= 3);
+        if (sameFamily) return sameFamily.id;
+        const cls = motors.find((mm) => mm.id === id).class;
+        const sibling = motors.find((mm) => mm.class === cls && mm.delayS >= 3);
+        return sibling ? sibling.id : id;
+      }))];
+    }
     if (recommendedMotors.length === 0) {
       // Fall back to a class band chosen by mass.
       const bands = massEmptyKg < 0.05 ? ['A', 'B', 'C'] : massEmptyKg < 0.09 ? ['B', 'C', 'D'] : ['C', 'D', 'E'];

@@ -83,7 +83,12 @@ export class Simulation {
     // left the pad (may be before or after apogee). A pad-stuck rocket never ejects.
     // Recovery devices resolve first (random rockets roll here), then the fail
     // roll runs on the shared rng — separate streams keep the order safe.
-    if (!this.ejected && s.liftedOff && s.time >= motor.burnTimeS + motor.delayS) {
+    // A rocket whose ONLY device is a catalogue tumble needs no ejection charge
+    // (it passively destabilises at burnout), so its delay is capped short —
+    // otherwise a long-delay motor ends the hop before recovery ever engages.
+    const explicitTumble = rocket.recovery?.length === 1 && rocket.recovery[0] === 'tumble';
+    const ejectAt = motor.burnTimeS + (explicitTumble ? Math.min(motor.delayS, 0.5) : motor.delayS);
+    if (!this.ejected && s.liftedOff && s.time >= ejectAt) {
       this.ejected = true;
       s.recoveryDeployed = resolveRecovery(rocket.recovery, this.recRng);
       applyOutcome(s, this.config, this.rng, 'ejection');

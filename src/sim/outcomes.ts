@@ -17,8 +17,10 @@ export function catoProbability(config: SimConfig): number {
 
 // Fail odds key on the resolved device list (rolled before this runs): a
 // rocket that recovered a parachute has the gentle 4% chance, everything
-// else (streamer/tumble/rotor/wing complexity) tangles more often.
+// else (streamer/rotor/wing complexity) tangles more often. A pure tumble
+// has no mechanism to fail — it is just the body falling stably.
 export function chuteFailProbability(devices: RecoveryDevice[] | undefined): number {
+  if (devices?.length === 1 && devices[0] === 'tumble') return 0;
   return devices?.includes('parachute') ? BASE_CHUTE_FAIL : TUMBLE_CHUTE_FAIL;
 }
 

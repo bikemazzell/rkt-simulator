@@ -17,16 +17,19 @@ const TRAIL_MAX = 256;
 // hangs nose-up from canopy, streamer, or rotor while descending.
 const ATTITUDE_RATE = 5;          // slerp responsiveness, 1/s
 const ATTITUDE_MIN_SPEED = 1.5;   // m/s below which there is no direction to follow
-const NOSE_UP_VY = 1;             // m/s: only hang nose-up once actually sinking
 const HELI_SPIN_RAD = 4;          // rad/s yaw under the rotor
 const TUMBLE_SPIN_RAD = Math.PI * 2 * 0.8; // end-over-end, ~0.8 rev/s
 const GLIDER_BANK_RAD = 0.35;     // ~20° bank on the glide circle
 const ROTOR_SPIN_RAD = 20;        // visual blade spin, rad/s
 const STREAMER_FLAP_RAD = 0.25;   // ribbon flap amplitude
+const SWAY_RAD = 0.06;            // gentle pendulum sway under canopy/streamer
 const UP = new THREE.Vector3(0, 1, 0);
 const NOSE_UP_DEVICES: RecoveryDevice[] = ['parachute', 'streamer', 'helicopter'];
 
 interface Debris { mesh: THREE.Mesh; vel: THREE.Vector3; }
+
+/** Environment wind (m/s) used to lean a hanging recovery downwind. */
+export interface RocketVisualOpts { wind?: { x: number; z: number } }
 
 export class RocketVisual {
   private readonly flame: THREE.Mesh;
@@ -35,11 +38,14 @@ export class RocketVisual {
   private readonly rotor: THREE.Group;
   private readonly wings: THREE.Group;
   private readonly data: Rocket;
+  private readonly wind: { x: number; z: number } | undefined;
   private explosion: THREE.Group | null = null;
   private readonly debris: Debris[] = [];
   private readonly debrisGeo = new THREE.SphereGeometry(1, 8, 8);
   private explosionAge = 0;
   private exploded = false;
+  private wrecked = false;
+  private scorch: THREE.Mesh | null = null;
   private readonly trail: THREE.Line;
   private readonly trailPos = new Float32Array(TRAIL_MAX * 3);
   private readonly trailCol = new Float32Array(TRAIL_MAX * 3);
@@ -56,8 +62,10 @@ export class RocketVisual {
     private readonly scene: THREE.Scene,
     private readonly rocket: THREE.Group,
     data: Rocket,
+    opts?: RocketVisualOpts,
   ) {
     this.data = data;
+    this.wind = opts?.wind;
     scene.add(rocket);
     this.flame = buildFlame(data);
     this.flame.visible = false;
@@ -111,7 +119,7 @@ export class RocketVisual {
     this.animateDevices(state);
     this.updateAttitude(state);
     if ((state.phase === 'failed' || state.outcome === 'cato') && !this.exploded) {
-      this.explode();
+      this.explode(state.impactSpeed);
     }
     if (this.explosion) this.animateExplosion();
   }
@@ -175,25 +183,41 @@ export class RocketVisual {
       return;
     }
 
-    const target = new THREE.Vector3(v.x / speed, v.y / speed, v.z / speed);
-    let bank = false;
-    if (dominant !== null && NOSE_UP_DEVICES.includes(dominant) && v.y < NOSE_UP_VY) {
-      // Hang nose-up from the recovery above once actually sinking; ejecting
-      // mid-climb (angled launches) must not snap the nose vertical.
-      target.set(0, 1, 0);
-    } else if (dominant === 'glider') {
-      bank = true; // wings out: fly the glide path, rolled into the turn
+    if (dominant !== null && NOSE_UP_DEVICES.includes(dominant)) {
+      // Hang nose-up under the recovery the moment it is out — ascent or
+      // descent. The body trails the drifting canopy, so a strong wind leans
+      // the nose downwind, and the whole pendulum sways gently.
+      const w = this.wind;
+      const wx = w?.x ?? 0;
+      const wz = w?.z ?? 0;
+      const windMag = Math.hypot(wx, wz);
+      const lean = Math.min(0.5, Math.atan2(windMag, 8));
+      const target = UP.clone();
+      if (windMag > 0.01 && lean > 0.001) {
+        target.addScaledVector(new THREE.Vector3(wx / windMag, 0, wz / windMag), Math.tan(lean)).normalize();
+      }
+      const desired = new THREE.Quaternion().setFromUnitVectors(UP, target);
+      if (dominant !== 'helicopter') {
+        // The rotor's spin dwarfs any pendulum sway — only canopy/streamer sway.
+        desired.multiply(new THREE.Quaternion().setFromAxisAngle(UP, Math.sin(state.time * 1.3) * SWAY_RAD));
+      }
+      const k = 1 - Math.exp(-ATTITUDE_RATE * dt);
+      this.rocket.quaternion.slerp(desired, k);
+      if (dominant === 'helicopter') {
+        this.rocket.rotateY(HELI_SPIN_RAD * dt); // spiral under the rotor
+      }
+      return;
     }
+
+    const target = new THREE.Vector3(v.x / speed, v.y / speed, v.z / speed);
+    const bank = dominant === 'glider'; // wings out: fly the glide path, rolled into the turn
     const desired = new THREE.Quaternion().setFromUnitVectors(UP, target);
     if (bank) desired.multiply(new THREE.Quaternion().setFromAxisAngle(UP, GLIDER_BANK_RAD));
     const k = 1 - Math.exp(-ATTITUDE_RATE * dt);
     this.rocket.quaternion.slerp(desired, k);
-    if (dominant === 'helicopter' && v.y < NOSE_UP_VY) {
-      this.rocket.rotateY(HELI_SPIN_RAD * dt); // spiral under the rotor
-    }
   }
 
-  explode(): void {
+  explode(impactSpeed = 0): void {
     this.exploded = true;
     this.rocket.visible = false;
     this.trail.visible = false;
@@ -212,6 +236,38 @@ export class RocketVisual {
       this.explosion.add(mesh);
     }
     this.scene.add(this.explosion);
+    this.layScorch(impactSpeed);
+  }
+
+  /** Scorch decal where the wreck came down; grows with impact speed. */
+  private layScorch(impactSpeed: number): void {
+    const radius = 0.35 + 0.5 * Math.min(Math.max(impactSpeed, 0) / 25, 1);
+    const geo = new THREE.CircleGeometry(radius, 24);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x111111, transparent: true, opacity: 0.55, depthWrite: false,
+    });
+    const p = this.rocket.position;
+    this.scorch = new THREE.Mesh(geo, mat);
+    this.scorch.position.set(p.x, p.y + 0.02, p.z);
+    this.scorch.userData.isScorch = true;
+    this.scene.add(this.scorch);
+  }
+
+  /** Once the burst clears, the rocket remains as a charred wreck on its side. */
+  private leaveWreck(): void {
+    if (this.wrecked) return;
+    this.wrecked = true;
+    this.rocket.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshLambertMaterial | undefined;
+      if (m && 'color' in m) m.color.multiplyScalar(0.22);
+    });
+    // Topple over around a random horizontal axis (visual only).
+    const a = Math.random() * Math.PI * 2;
+    const tilt = 1.2 + Math.random() * 0.9; // ~70°..120° from vertical
+    const axis = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+    this.rocket.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, tilt));
+    this.rocket.visible = true;
   }
 
   private animateExplosion(): void {
@@ -225,7 +281,10 @@ export class RocketVisual {
       mesh.scale.multiplyScalar(0.975);
       (mesh.material as THREE.MeshBasicMaterial).opacity = fade;
     }
-    if (this.explosionAge >= EXPLOSION_LIFE) this.disposeExplosion();
+    if (this.explosionAge >= EXPLOSION_LIFE) {
+      this.disposeExplosion();
+      this.leaveWreck();
+    }
   }
 
   private disposeExplosion(): void {
@@ -285,6 +344,12 @@ export class RocketVisual {
     (this.trail.geometry as THREE.BufferGeometry).dispose();
     (this.trail.material as THREE.Material).dispose();
     this.disposeExplosion();
+    if (this.scorch) {
+      this.scene.remove(this.scorch);
+      this.scorch.geometry.dispose();
+      (this.scorch.material as THREE.Material).dispose();
+      this.scorch = null;
+    }
     this.debrisGeo.dispose();
   }
 }

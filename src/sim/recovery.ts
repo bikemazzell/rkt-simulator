@@ -59,7 +59,9 @@ export function helicopterArea(massKg: number): number {
 }
 
 export function tumbleArea(rocket: Rocket): number {
-  return Math.PI * (rocket.diameterM / 2) ** 2 * TUMBLE_AREA_FACTOR;
+  // Inflated-body drag, floored so skinny BT-5-class bodies still tumble
+  // survivably instead of falling ballistically through the crash threshold.
+  return Math.max(Math.PI * (rocket.diameterM / 2) ** 2 * TUMBLE_AREA_FACTOR, 0.02);
 }
 
 /** Steady-state sink rate of a device for a given rocket + current mass

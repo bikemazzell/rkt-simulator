@@ -215,14 +215,14 @@ function showPreview(): void {
   const params = makeParamsFor(env.id, PREVIEW_SEED);
 
   scene.clearWorld();
-  scene.reset();
+  previewMesh = buildRocketMesh(rocket);
+  scene.reset(previewMesh.userData.topY ?? 1.6); // frame for this rocket's true size
   applyDebugCam();
   buildEnvironment(env, params, PREVIEW_SEED, sel.challenge.type === 'landing-zone');
   addScaleLineup(env.id, params, rocket);
   addTargetRing(sel.challenge, params);
   scene.setGroundFloor(params.groundHeight);
 
-  previewMesh = buildRocketMesh(rocket);
   previewMesh.position.set(0, params.launchY ?? params.groundHeight, 0);
   scene.scene.add(previewMesh);
 
@@ -265,13 +265,14 @@ function attachGimbalAt(target: Object3D, withRod: boolean): void {
 }
 
 function launch(): void {
-  // Relaunch from a successful landing: keep the world as-is and take off
-  // from where the rocket rests, pointing where the (rebuilt) gimbal aims.
-  // Crashes/reset never get here — those fall through to a fresh pad launch.
-  const relaunchFrom = sim && sim.done && sim.state.phase === 'landed' && visual
+  // Relaunch from a finished flight: keep the world as-is and take off from
+  // where the rocket ended up (resting spot after a landing, crash site for a
+  // wreck), pointing where the (rebuilt) gimbal aims. Reset falls through to
+  // a fresh pad launch.
+  const relaunchFrom = sim && sim.done && (sim.state.phase === 'landed' || sim.state.phase === 'failed') && visual
     ? { ...sim.state.position }
     : null;
-  const prevMesh = relaunchFrom && visual ? visual.flightMesh : null;
+  const prevMesh = relaunchFrom && sim?.state.phase === 'landed' && visual ? visual.flightMesh : null;
   clearRocket();
   clearGimbal();
   if (summaryTimer) { clearTimeout(summaryTimer); summaryTimer = null; } // a pending summary must not pop over the new flight
@@ -281,14 +282,25 @@ function launch(): void {
   const env = environmentById(sel.envId)!;
   const seed = launchSeedOverride ?? (Date.now() >>> 0); // per-launch seed; drives all sim randomness deterministically
 
-  if (relaunchFrom && prevMesh && current) {
+  if (relaunchFrom && current) {
+    const wind = { x: current.params.wind.base.x, z: current.params.wind.base.z };
     sim = new Simulation({
       rocket, motor, environment: current.params, seed, challenge: current.challenge,
       groundAt: launchGroundAt,
       initialDirection: aimDirection(aim), // seeded from the resting attitude at finish()
       launchOrigin: relaunchFrom,
     });
-    visual = new RocketVisual(scene.scene, prevMesh, rocket); // fresh trail/flame around the same mesh
+    if (prevMesh) {
+      visual = new RocketVisual(scene.scene, prevMesh, rocket, { wind }); // fresh trail/flame around the same mesh
+    } else {
+      // Relaunch from a crash site: the old mesh is the charred wreck, so fly
+      // a factory-fresh rocket from where it lies.
+      const mesh = buildRocketMesh(rocket);
+      mesh.position.set(relaunchFrom.x, relaunchFrom.y, relaunchFrom.z);
+      mesh.rotation.order = 'XYZ';
+      mesh.rotation.set(MathUtils.degToRad(aim.x), MathUtils.degToRad(aim.y), MathUtils.degToRad(aim.z));
+      visual = new RocketVisual(scene.scene, mesh, rocket, { wind });
+    }
     groundHeight = relaunchFrom.y; // HUD altitude above the resting spot
     finished = false;
     accumulator = 0;
@@ -303,7 +315,8 @@ function launch(): void {
   current = { params, challenge: sel.challenge };
 
   scene.clearWorld();
-  scene.reset();
+  const freshMesh = buildRocketMesh(rocket);
+  scene.reset(freshMesh.userData.topY ?? 1.6); // frame for this rocket's true size
   applyDebugCam();
   const ctx = buildEnvironment(env, params, seed, sel.challenge.type === 'landing-zone');
   addScaleLineup(env.id, params, rocket);
@@ -316,11 +329,13 @@ function launch(): void {
     initialDirection: aimDirection(aim),
   });
   launchGroundAt = ctx.groundAt;
-  const mesh = buildRocketMesh(rocket);
+  const mesh = freshMesh;
   mesh.position.set(0, params.launchY ?? params.groundHeight, 0);
   mesh.rotation.order = 'XYZ';
   mesh.rotation.set(MathUtils.degToRad(aim.x), MathUtils.degToRad(aim.y), MathUtils.degToRad(aim.z));
-  visual = new RocketVisual(scene.scene, mesh, rocket);
+  visual = new RocketVisual(scene.scene, mesh, rocket, {
+    wind: { x: params.wind.base.x, z: params.wind.base.z },
+  });
   groundHeight = params.launchY ?? params.groundHeight;
   finished = false;
   accumulator = 0;                  // discard any leftover fractional tick
@@ -365,10 +380,11 @@ function finish(): void {
   if (summaryTimer) clearTimeout(summaryTimer);
   summaryTimer = setTimeout(() => ui.showSummary(summary), crashed ? 1300 : 400);
 
-  // After a soft landing the gimbal comes back at the resting spot so the
-  // next launch can be re-aimed; it seeds from the resting orientation
-  // (nose follows the descent, so usually upright under the chute).
-  if (sim.state.phase === 'landed' && visual) {
+  // After a soft landing — or a crash that left a wreck — the gimbal comes
+  // back at that spot so the next launch can be re-aimed; it seeds from the
+  // resting orientation (nose follows the descent, so usually upright under
+  // the chute; a wreck lies where it toppled).
+  if ((sim.state.phase === 'landed' || sim.state.phase === 'failed') && visual) {
     const e = new Euler().setFromQuaternion(visual.flightMesh.quaternion, 'XYZ');
     aim = normalizeAim({
       x: MathUtils.radToDeg(e.x),

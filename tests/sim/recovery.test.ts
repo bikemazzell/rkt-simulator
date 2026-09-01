@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   RECOVERY_DEVICES, RANDOM_WEIGHTS, resolveRecovery, recoveryRng,
-  deviceSink, dominantDevice, streamerArea, helicopterArea,
+  deviceSink, dominantDevice, streamerArea, helicopterArea, tumbleArea,
   STREAMER_TARGET_SINK, HELICOPTER_TARGET_SINK, GLIDER_SINK, TUMBLE_AREA_FACTOR,
 } from '../../src/sim/recovery';
 import { mulberry32 } from '../../src/sim/rng';
@@ -83,11 +83,19 @@ describe('drag areas and sink rates', () => {
   });
 
   it('tumble sink for a typical light rocket stays in a survivable-ish band', () => {
-    const v = deviceSink('tumble', rocket({ massEmptyKg: 0.1, diameterM: 0.025, dragCoefficient: 0.75 }), 0.1);
-    const A = Math.PI * 0.0125 ** 2 * TUMBLE_AREA_FACTOR;
-    expect(v).toBeCloseTo(Math.sqrt((2 * 0.1 * G) / (RHO * 1.2 * A)), 6);
-    expect(v).toBeGreaterThan(6);
-    expect(v).toBeLessThan(20);
+    const r = rocket({ massEmptyKg: 0.1, diameterM: 0.025, dragCoefficient: 0.75 });
+    const A = Math.max(Math.PI * 0.0125 ** 2 * TUMBLE_AREA_FACTOR, 0.02); // floored
+    expect(deviceSink('tumble', r, 0.1)).toBeCloseTo(Math.sqrt((2 * 0.1 * G) / (RHO * 1.2 * A)), 6);
+    expect(deviceSink('tumble', r, 0.1)).toBeGreaterThan(6);
+    expect(deviceSink('tumble', r, 0.1)).toBeLessThan(20);
+  });
+
+  it('tumble area floors at 0.02 m² so skinny BT-5 bodies still slow down', () => {
+    const skinny = rocket({ massEmptyKg: 0.181, diameterM: 0.0137, dragCoefficient: 0.822 });
+    expect(tumbleArea(skinny)).toBeCloseTo(0.02, 6); // body×14 ≈ 0.0021 → floored
+    expect(deviceSink('tumble', skinny, 0.185)).toBeLessThan(15); // under crash threshold
+    const fat = rocket({ massEmptyKg: 0.2, diameterM: 0.05, dragCoefficient: 0.6 });
+    expect(tumbleArea(fat)).toBeCloseTo(Math.PI * 0.025 ** 2 * TUMBLE_AREA_FACTOR, 6); // above floor
   });
 
   it('glider sink is the scripted glide value', () => {

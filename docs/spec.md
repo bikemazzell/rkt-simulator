@@ -71,6 +71,10 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
 - Mouse drag / scroll: orbit + zoom the camera (OrbitControls). The polar angle
   is capped just past horizontal and a hard ground-floor clamp keeps the camera
   from ever sinking below the environment's ground plane.
+- **Adaptive framing:** the initial/reset orbit distance scales with the
+  rocket's height (clamped ~2.2–7.6 m), so a 49 cm BT-5 rocket fills the view
+  while a 2 m one still gets breathing room — true scale is preserved and the
+  reference lineup communicates size.
 - Toggle **follow camera** vs **free orbit**. Follow is *rigid*: the orbit target
   tracks the rocket and the camera translates with it, so the rocket stays framed
   at any altitude while the user's own zoom and orbit angle are preserved.
@@ -111,13 +115,19 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
   zeroes the aim; changing rocket, environment, or challenge preserves it.
 - **Flight attitude + relaunch.** The rocket model points along its velocity
   vector while flying freely (weathercocking via a smoothed nose alignment in
-  `RocketVisual`), then hangs nose-up under the canopy once the chute is out;
-  the attitude freezes on landing. After a soft (`landed`) flight the gimbal
+  `RocketVisual`), then hangs nose-up under the canopy the moment a
+  nose-up device (parachute/streamer/rotor) deploys — even while still
+  ascending — swaying gently and leaning downwind in strong wind; the
+  attitude freezes on landing. After a soft (`landed`) flight the gimbal
   is rebuilt around the resting rocket — seeded from its resting orientation,
   without the pad rod — so the player can re-aim. Launching again starts the
   next flight from that exact spot: `SimConfig.launchOrigin` overrides the pad
   origin, and the apogee baseline/HUD altitude are measured above it. Crashes
-  and Reset still produce a fresh pad launch.
+  now leave a **crash site**: the debris burst settles into a charred,
+  toppled wreck plus a scorch decal scaled by impact speed, the gizmo is
+  rebuilt at the wreck (re-aim and relaunch from there — a fresh mesh flies
+  from the wreck via `launchOrigin`), and Reset still produces a fresh pad
+  launch.
 - Launch, Reset, Camera, Speed, and Mute buttons in the UI.
 - Keyboard: `Space` = launch/reset, `C` = toggle camera, `F` = cycle speed,
   `M` = mute, `WASD` = pan and `Q`/`E` = up/down (orbit mode).
@@ -229,7 +239,13 @@ idle → boost → coast → apogee → descent → landed
 Recovery is driven by the **ejection charge**, which fires once at
 `burnout + delayS` — this may be slightly before or after apogee. A well-matched
 delay deploys the chute near apogee; too short a delay deploys it while still
-ascending (a realistic drag penalty and lower apogee).
+ascending (a realistic drag penalty and lower apogee). One exception: a rocket
+whose *only* declared device is `tumble` (a designed no-assist rocket such as the
+Destination Mars Leaper, which "lands upright on its tripod legs") destabilises
+passively at `burnout + min(delayS, 0.5s)` — no ejection charge is needed and
+nothing can fail to deploy. If a product's only scraped motor recommendations are
+delay-0 boosters, the generator substitutes the same-family delayed sibling
+(e.g. A10-0 → A10-3) so single-stage flights still deploy on time.
 
 ### 7.3 Recovery devices (`recovery.ts`)
 
@@ -245,8 +261,9 @@ the smallest computed sink rate at ejection mass):
 
 - **parachute:** canopy drag from catalogue `chuteDiameterM`/`chuteCd` (~4-6 m/s).
 - **streamer:** ribbon drag area `2mg/(ρ·Cd·v²)` tuned to ~9 m/s.
-- **tumble:** inflated body area (×14) — a stabilized fast fall that may still
-  land hard on heavy rockets.
+- **tumble:** inflated body area (×14, floored at 0.02 m² so skinny BT-5
+  tubes still brake) — a stabilized fast fall that may still land hard on
+  heavy rockets; a pure-tumble rocket cannot fail deployment (probability 0).
 - **helicopter:** rotor drag area sized for ~3.5 m/s plus a lateral spiral
   (radius ~1.5 m, period ~2.5 s), carried by the wind.
 - **glider:** kinematic override once descending — a banked circle (radius

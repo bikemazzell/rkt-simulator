@@ -68,6 +68,8 @@ describe('outcomes', () => {
       chuteFailProbability(withChute.rocket.recovery ?? []),
     );
     expect(chuteFailProbability(undefined)).toBeGreaterThan(chuteFailProbability(['parachute']));
+    // A pure-tumble recovery has no mechanism to fail — zero fail odds.
+    expect(chuteFailProbability(['tumble'])).toBe(0);
   });
 
   it('high wind raises tip-off probability', () => {
