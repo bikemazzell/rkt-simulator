@@ -21,7 +21,9 @@ const HELI_SPIN_RAD = 4;          // rad/s yaw under the rotor
 const TUMBLE_SPIN_RAD = Math.PI * 2 * 0.8; // end-over-end, ~0.8 rev/s
 const GLIDER_BANK_RAD = 0.35;     // ~20° bank on the glide circle
 const ROTOR_SPIN_RAD = 20;        // visual blade spin, rad/s
-const STREAMER_FLAP_RAD = 0.25;   // ribbon flap amplitude
+const STREAMER_WAVE_RAD_S = 9;    // flutter frequency along the strip
+const STREAMER_WAVE_LAG = 0.35;   // joint phase lag: half a wavelength per strip
+const STREAMER_SEG_FLAP_RAD = 0.20; // per-joint flap amplitude, tip whips hardest
 const SWAY_RAD = 0.06;            // gentle pendulum sway under canopy/streamer
 const UP = new THREE.Vector3(0, 1, 0);
 const NOSE_UP_DEVICES: RecoveryDevice[] = ['parachute', 'streamer', 'helicopter'];
@@ -35,6 +37,7 @@ export class RocketVisual {
   private readonly flame: THREE.Mesh;
   private readonly chute: THREE.Mesh;
   private readonly streamer: THREE.Group;
+  private readonly streamerPivots: THREE.Object3D[] = [];
   private readonly rotor: THREE.Group;
   private readonly wings: THREE.Group;
   private readonly data: Rocket;
@@ -83,7 +86,10 @@ export class RocketVisual {
     // Recovery devices (visibility is keyed on the deployed list per update).
     this.streamer = buildStreamer(data);
     this.streamer.visible = false;
-    // Ribbons stand above the nose: their geometry hangs down from the pivot.
+    // The strip chains upward off the nose tip; cache its hinge order once.
+    this.streamer.traverse((o) => {
+      if (o.userData.isStreamerSegment !== undefined) this.streamerPivots.push(o);
+    });
     this.streamer.position.y = topY + 0.02;
     rocket.add(this.streamer);
     this.rotor = buildRotor(data);
@@ -147,8 +153,14 @@ export class RocketVisual {
     this.lastDeviceTime = state.time;
     if (dt <= 0) return; // frozen sim clock between frames
     if (this.streamer.visible) {
-      this.streamer.children.forEach((ribbon, i) => {
-        ribbon.rotation.z = (i === 0 ? 0.18 : -0.18) + Math.sin(state.time * 10 + i * Math.PI) * STREAMER_FLAP_RAD;
+      // Traveling flutter wave: joints lag in phase down the chain and the
+      // free tip whips hardest, so the strip reads as cloth, not a rigid rod.
+      const n = this.streamerPivots.length;
+      this.streamerPivots.forEach((pivot, i) => {
+        const grow = 0.35 + 0.65 * ((i + 1) / n);
+        const phase = state.time * STREAMER_WAVE_RAD_S - i * STREAMER_WAVE_LAG;
+        pivot.rotation.z = Math.sin(phase) * STREAMER_SEG_FLAP_RAD * grow;
+        pivot.rotation.x = Math.cos(phase * 0.83) * STREAMER_SEG_FLAP_RAD * 0.55 * grow;
       });
     }
     if (this.rotor.visible) this.rotor.rotation.y += ROTOR_SPIN_RAD * dt;

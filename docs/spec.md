@@ -377,7 +377,8 @@ is owned by the environment's `params` (there is no separate wind field on
   `sim/aim.ts` is the pure math (angle normalization, Euler 'XYZ' direction
   closed form pinned by a parity test against three).
 - **Effects:** rocket-proportioned flame during boost, parachute canopy on
-  recovery (radius from `chuteDiameterM`), flapping streamer ribbons, spinning
+  recovery (radius from `chuteDiameterM`), a segmented cloth-strip streamer
+  whose hinged blocks ride a traveling flutter wave, spinning
   rotor blades, deployed glider wings, explosion burst on CATO/hard
   landing, and a short fading trail line behind the rocket. Kept simple
   (sprites or small meshes), not a full particle engine.

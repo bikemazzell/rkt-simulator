@@ -38,14 +38,50 @@ function tagged(root: THREE.Object3D, tag: string): THREE.Object3D | undefined {
   return found;
 }
 
+/** The streamer's hinged pivot chain, root → tip (pre-order walk of a nest). */
+function streamerPivots(root: THREE.Object3D): THREE.Object3D[] {
+  const pivots: THREE.Object3D[] = [];
+  root.traverse((o) => { if (o.userData.isStreamerSegment !== undefined) pivots.push(o); });
+  return pivots;
+}
+
+/** Local rest-pose height of a block mesh (geometry spans 0..segLen). */
+function blockHeight(mesh: THREE.Object3D): number {
+  const box = new THREE.Box3().setFromObject(mesh);
+  return box.max.y - box.min.y;
+}
+
 describe('recovery device builders', () => {
-  it('builds a streamer with ribbon strands above the nose', () => {
+  it('builds the streamer as a chain of small hinged blocks climbing off the nose', () => {
     const s = buildStreamer(data);
     expect(s.userData.isStreamer).toBe(true);
-    expect(s.children.length).toBeGreaterThanOrEqual(2);
+    const pivots = streamerPivots(s);
+    expect(pivots.length).toBeGreaterThanOrEqual(8);
+    const len = Math.max(0.5, data.look.bodyLengthM * 1.5);
+    const segLen = len / pivots.length;
+    // Chained: pivot i hangs off pivot i-1 at the block tip, and each pivot
+    // owns exactly one thin block of the strip's segment length.
+    for (let i = 0; i < pivots.length; i++) {
+      const blocks = pivots[i].children.filter((c) => (c as THREE.Mesh).isMesh);
+      expect(blocks.length).toBe(1);
+      expect(blockHeight(blocks[0])).toBeGreaterThan(segLen * 0.75);
+      expect(blockHeight(blocks[0])).toBeLessThan(segLen * 1.25);
+      if (i > 0) {
+        expect(pivots[i].parent).toBe(pivots[i - 1]);
+        expect(pivots[i].position.y).toBeCloseTo(segLen, 6);
+      }
+    }
+    // Rest pose: the whole strip stands straight up from the group origin —
+    // no geometry drapes down past the hinge onto the body.
     s.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(s);
-    expect(box.max.y - box.min.y).toBeGreaterThan(0.3); // a real ribbon, true-scale
+    expect(box.min.y).toBeGreaterThanOrEqual(-1e-6);
+    expect(box.max.y).toBeCloseTo(len, 2);
+    expect(pivots[0].position.length()).toBeLessThan(1e-9);
+    const tip = pivots[pivots.length - 1].getWorldPosition(new THREE.Vector3());
+    tip.y += segLen; // the last block extends one more segment to the tip
+    expect(tip.y).toBeCloseTo(len, 2);
+    expect(Math.hypot(tip.x, tip.z)).toBeLessThan(1e-6);
   });
 
   it('builds a helicopter rotor with blades wider than the body', () => {
@@ -126,16 +162,67 @@ describe('RocketVisual recovery visibility', () => {
     } finally { visual.dispose(); }
   });
 
-  it('flaps the streamer ribbons while descending', () => {
+  it('keeps every segment flapping as the sim clock advances', () => {
     const { mesh, visual } = makeVisual();
     try {
-      visual.update(state(1, { x: 0, y: -8, z: 0 }, { recoveryDeployed: ['streamer'] }));
-      const ribbons = (tagged(mesh, 'isStreamer') as THREE.Group).children;
-      const a = ribbons.map((r) => r.rotation.z);
-      visual.update(state(1.3, { x: 0, y: -8, z: 0 }, { recoveryDeployed: ['streamer'] }));
-      const b = ribbons.map((r) => r.rotation.z);
-      const moved = a.some((v, i) => Math.abs(v - b[i]) > 0.01);
-      expect(moved).toBe(true);
+      const st = (t: number) => state(t, { x: 0, y: -8, z: 0 }, { recoveryDeployed: ['streamer'] });
+      visual.update(st(1)); // prime: first update has dt=0 and skips animation
+      visual.update(st(1.3));
+      const pivots = streamerPivots(tagged(mesh, 'isStreamer')!);
+      expect(pivots.length).toBeGreaterThanOrEqual(8); // guards the every() below
+      const a = pivots.map((p) => p.rotation.z);
+      visual.update(st(1.6));
+      const b = pivots.map((p) => p.rotation.z);
+      expect(a.every((v, i) => Math.abs(v - b[i]) > 1e-4)).toBe(true);
+    } finally { visual.dispose(); }
+  });
+
+  it('curves the strip mid-flap — segments point in several world directions', () => {
+    const { mesh, visual } = makeVisual();
+    try {
+      const st = (t: number) => state(t, { x: 0, y: -8, z: 0 }, { recoveryDeployed: ['streamer'] });
+      visual.update(st(1)); // prime
+      visual.update(st(1.173));
+      const pivots = streamerPivots(tagged(mesh, 'isStreamer')!);
+      mesh.updateMatrixWorld(true);
+      const dirs = pivots.map((p) =>
+        new THREE.Vector3(0, 1, 0).applyQuaternion(p.getWorldQuaternion(new THREE.Quaternion())));
+      // A strip, not a tilted rod: several joints bend away from the axis...
+      const offAxis = dirs.filter((d) => Math.hypot(d.x, d.z) > 0.02).length;
+      expect(offAxis).toBeGreaterThanOrEqual(3);
+      // ...and consecutive segments disagree in direction (real curvature).
+      let bent = 0;
+      for (let i = 1; i < dirs.length; i++) if (dirs[i].angleTo(dirs[i - 1]) > 0.015) bent++;
+      expect(bent).toBeGreaterThanOrEqual(3);
+    } finally { visual.dispose(); }
+  });
+
+  it('whips the strip tip through world space without folding under', () => {
+    const { mesh, visual } = makeVisual();
+    try {
+      const st = (t: number) => state(t, { x: 0, y: -8, z: 0 }, { recoveryDeployed: ['streamer'] });
+      const pivots = streamerPivots(tagged(mesh, 'isStreamer')!);
+      const segLen = blockHeight(pivots[pivots.length - 1].children[0]);
+      const root = pivots[0];
+      const last = pivots[pivots.length - 1];
+      const tipXs: number[] = [];
+      const rootXs: number[] = [];
+      let minAbove = Infinity;
+      for (let t = 1; t <= 4.001; t += 0.05) {
+        visual.update(st(t));
+        mesh.updateMatrixWorld(true);
+        const rp = root.getWorldPosition(new THREE.Vector3());
+        const lp = last.getWorldPosition(new THREE.Vector3());
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(last.getWorldQuaternion(new THREE.Quaternion()));
+        const ep = lp.addScaledVector(up, segLen);
+        tipXs.push(ep.x);
+        rootXs.push(rp.x);
+        minAbove = Math.min(minAbove, ep.y - rp.y);
+      }
+      const span = (xs: number[]) => Math.max(...xs) - Math.min(...xs);
+      expect(span(tipXs)).toBeGreaterThan(0.04); // the tip visibly sweeps
+      expect(span(tipXs)).toBeGreaterThan(span(rootXs) * 2); // tip moves, not the anchor
+      expect(minAbove).toBeGreaterThan(0); // never folds below its hinge
     } finally { visual.dispose(); }
   });
 

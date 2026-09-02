@@ -64,21 +64,30 @@ export function buildFlame(rocket: Rocket): THREE.Mesh {
   return mesh;
 }
 
-/** Flapping streamer strands: crepe ribbons standing above the nose, true-scale. */
+/** Cloth-strip streamer: a chain of small hinged blocks standing above the
+ * nose, true-scale, waving like a crepe ribbon in the descent airflow. */
 export function buildStreamer(rocket: Rocket): THREE.Group {
   const g = new THREE.Group();
   g.userData.isStreamer = true;
   const len = Math.max(0.5, rocket.look.bodyLengthM * 1.5);
   const width = Math.max(0.025, rocket.diameterM * 0.9);
+  const segments = 10;
+  const segLen = len / segments;
   const mat = new THREE.MeshLambertMaterial({ color: 0xff8c1a, side: THREE.DoubleSide });
-  for (let i = 0; i < 2; i++) {
-    const ribbon = new THREE.Mesh(new THREE.BoxGeometry(width, len, 0.004), mat);
-    // Hang the strand from its top so the flap pivot reads naturally.
-    ribbon.geometry.translate(0, -len / 2, 0);
-    ribbon.position.set(i === 0 ? width * 0.6 : -width * 0.6, 0, 0);
-    ribbon.rotation.z = i === 0 ? 0.18 : -0.18;
-    g.add(ribbon);
+  let parent: THREE.Object3D = g;
+  for (let i = 0; i < segments; i++) {
+    const pivot = new THREE.Group();
+    pivot.userData.isStreamerSegment = i; // tag pivots only, never the blocks
+    const block = new THREE.Mesh(new THREE.BoxGeometry(width, segLen, 0.004), mat);
+    // Each block climbs up from its hinge so the chain stands off the nose.
+    block.geometry.translate(0, segLen / 2, 0);
+    pivot.add(block);
+    // The next hinge sits at this block's tip, so rotations compound.
+    if (i > 0) pivot.position.y = segLen;
+    parent.add(pivot);
+    parent = pivot;
   }
+  g.userData.segmentCount = segments;
   return g;
 }
 

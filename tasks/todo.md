@@ -724,3 +724,122 @@ Three user reports, all fixed and live-verified:
 Quality: 310/310 tests (45 files), typecheck clean, build OK, smoke OK, zero
 console errors. Fix round (bug fixes) — no review panel per rounds 3/4/6
 precedent; CDP probe was the gate (evidence above).
+
+## Feature round 9 — streamer as a cloth strip (fix: twin rigid rods)
+
+User report: the streamer renders as "two solid rods flopping like
+chopsticks". Desired: a cloth effect — a strip of thin blocks that flop in
+the wind during descent (and the device already slows the rocket in the sim).
+
+### Root cause (verified in code)
+- `buildStreamer` (src/world/rocketMesh.ts:68) builds exactly **2 full-length
+  rigid boxes** (`BoxGeometry(width, len, 0.004)`, len 0.5–0.8 m) — two rods.
+- They also **hang DOWN** from the nose tip (`geometry.translate(0, -len/2, 0)`
+  at `topY+0.02`), draping along the body. A deployed streamer on a nose-up
+  descending rocket should stream **UPWARD** off the nose (device above, like
+  a canopy).
+- `animateDevices` (src/world/effects.ts:149) wiggles each whole rod's
+  `rotation.z` as a rigid body (±0.25 rad) — no per-segment motion, so it
+  reads as chopsticks, not cloth.
+- Physics is NOT in scope: `streamerArea` (src/sim/recovery.ts:53) already
+  mass-scales drag to the 9 m/s sink band (tests/sim/recovery.test.ts:63).
+  This round is purely the visual.
+
+### Design — segmented cloth strip
+- One strip of **10 hinged segments**: nested pivot `Group`s, each containing
+  a thin block extending up `segLen`; the next pivot sits at `y=segLen` (the
+  tip of the previous block). Chained transforms make the wave compound.
+  `userData.isStreamerSegment` tags the **pivot groups only** (meshes carry
+  no tag, so traversal collects a clean pivot chain).
+- Animation: traveling flutter wave — `pivot[i].rotation.z =
+  sin(ω·t − i·lag)·amp·grow(i)` plus a slower out-of-plane
+  `rotation.x = cos(0.83·ω·t − i·lag)·0.55·amp·grow(i)`; amplitude grows
+  toward the free tip (`grow = 0.35 + 0.65·(i+1)/n`) so the tail whips like
+  crepe ribbon. Constants: ω=9 rad/s, **lag=0.35 rad** (half-wavelength
+  along the strip — plan-review finding: lag=0.7 made ω·lag≈2π so the joints
+  cancelled in world space), amp=0.20 rad (worst-case cumulative tangent
+  ≈0.56 rad — whips, never folds under). Final gate on constants: the
+  two-frame visual smoke below.
+- Deterministic (no randomness) → unit-testable; ~10 extra objects, no
+  per-frame allocation (pivot list cached in the constructor).
+
+### Plan (TDD) — incorporates plan-review panel feedback (codex + deepseek)
+1. **RED** — rewrite/extend tests/world/recovery-visuals.test.ts. Every
+   animation test first does a priming `update()` (dt=0 skips device
+   animation on the first call) then asserts after ≥1 dt>0 update.
+   - builder: `userData.segmentCount` ≥ 8; pivot chain via tags — each pivot
+     has exactly ONE mesh child sized ≈ len/n (relative bound — absolute
+     0.3 m breaks on 2 m rockets); `segs[i].parent === segs[i-1]` and
+     `segs[i>0].position.y ≈ segLen`; rest-pose chain height ≈
+     `max(0.5, bodyLengthM·1.5)` ±0.02; `box.min.y ≥ -1e-6` (geometry
+     strictly above the hinge — no draping); root hinge at the group origin
+     and final endpoint ≈ (0, len, 0).
+   - curvature (the cloth discriminator): at a sampled mid-flap instant,
+     the segments' WORLD directions (quaternion-applied up vectors) include
+     ≥3 distinct directions — rigid rods cannot curve.
+   - movement: every segment's rotation.z changes between two update times.
+   - whip (world-space, not local): sweep 3 s of updates; the strip tip's
+     world endpoint horizontal excursion > 0.04 m AND > 2× the root
+     hinge's; and tip.y stays above the root hinge (no fold-under).
+   - keep: visibility semantics, packed-away-in-boost, nose-up attitude.
+   Run: `npx vitest run tests/world/recovery-visuals.test.ts` → new ones
+   fail (no `isStreamerSegment` pivots exist yet — all new tests are
+   genuinely red-first; old adjacency-based flap idea dropped: reviewers
+   showed it passes against the current rods).
+2. **GREEN** — src/world/rocketMesh.ts: rewrite `buildStreamer` as above
+   (keep `userData.isStreamer`; add `userData.segmentCount`). src/world/
+   effects.ts: replace `STREAMER_FLAP_RAD` with the wave constants; cache the
+   pivot chain in the constructor; rewrite the streamer branch of
+   `animateDevices`; fix the stale "hangs down from the pivot" comment.
+3. Docs: docs/spec.md:380 "flapping streamer ribbons" → segmented cloth-strip
+   wording. README already generic ("flapping") — verify, touch only if wrong.
+4. `npm run quality` (typecheck + full vitest + build) — all green.
+5. Visual smoke (gates the wave constants): dev server + browser probe — fly
+   a streamer rocket (e.g. Ripley Rocket A3-2), screenshot the strip at TWO
+   separated descent times (different wave phases) and confirm a fluttering
+   ribbon above the nose, not rods.
+6. Review panel on the implementation (codex + deepseek, per this round's
+   request), fix blockers, re-run quality.
+7. Commit `fix(world): cloth-strip streamer — 10 hinged segments with a
+   traveling flutter wave replacing the twin rigid rods`; push to main
+   (Pages deploys); confirm the Actions run is green.
+
+### Review plan (panel: codex + deepseek)
+- Artifacts: reviews/plan-streamer-{codex,deepseek}-20260902.md.
+- Scrutiny targets: (1) nested-pivot chain vs flat mesh array — transform
+  correctness & dispose() coverage; (2) wave math stability — max cumulative
+  tilt, no NaNs, frozen-clock behavior (dt guard); (3) test adequacy — do the
+  new assertions actually distinguish cloth from rods; (4) direction choice —
+  strip streaming up from the nose vs hanging down.
+
+### Wrap-up — implemented, verified, reviewed (2026-09-02)
+- Plan reviews: both APPROVE WITH CHANGES, no blockers; all findings adopted
+  (lag 0.35/amp 0.20 world-space cancellation fix, world-space whip test,
+  pivots-only tagging, relative len/n block bound, dt=0 priming, curvature
+  test replacing adjacency flap test).
+- TDD: 4 new/rewritten tests watched red-first (no `isStreamerSegment`
+  pivots exist in the old twin-rod build). Files: src/world/rocketMesh.ts
+  (strip builder), src/world/effects.ts (wave constants + cached pivot
+  chain), tests/world/recovery-visuals.test.ts, docs/spec.md:380.
+- Quality: `npm run quality` green — 312/312 tests (45 files), typecheck
+  clean, vite build OK (chunk-size warning pre-existing).
+- Visual smoke (seed 42, Ripley A3-2, apogee 61 m, streamer sink 9 m/s):
+  live telemetry at alt 36.1 m and 23.3 m — n=10 pivots, offAxis 10/10,
+  bent joints 7 and 9, tipHoriz 0.087/0.167 m, tipAboveBase 0.46/0.445 m,
+  per-segment tilt profile differs between instants (wave evolves). Frame
+  analysis (2 mid-descent screenshots + 1 earlier): single continuous strip,
+  bend location travels between frames, extends up off the nose, no
+  clipping/disconnect/fold-under. Screenshots /tmp/opencode (ephemeral).
+- Impl review panel: reviews/impl-streamer-{codex,deepseek}-20260902.md —
+  codex APPROVE WITH CHANGES (2 MINOR), deepseek APPROVE (3 MINOR), zero
+  blockers/important. Minors deferred: (a) per-frame `forEach` closure —
+  matches existing style (animateExplosion/pushTrail per deepseek);
+  (b) fold-under test samples 3 s of a ~69.8 s wave cycle — codex's own
+  numeric sweep shows the tip stays ≥82% of strip length above root over
+  the full cycle, and the amplitude bound rules it out analytically;
+  (c) test hardening (width assertion, all-pivot fold check, blockHeight
+  matrix refresh) — recorded here for a future test-polish round.
+- Commit: `fix(world): cloth-strip streamer — 10 hinged segments with a
+  traveling flutter wave replacing the twin rigid rods`; push to main,
+  Pages deploy confirmed green via gh.
+
