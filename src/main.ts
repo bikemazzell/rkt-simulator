@@ -300,6 +300,7 @@ function launch(): void {
       visual = new RocketVisual(scene.scene, mesh, rocket, { wind });
     }
     groundHeight = relaunchFrom.y; // HUD altitude above the resting spot
+    scene.resetFollowZoom(); // fresh zoom factor; world/camera are kept as-is
     finished = false;
     accumulator = 0;
     last = performance.now();
@@ -362,7 +363,10 @@ function frame(now: number): void {
     : previewMesh
       ? { x: previewMesh.position.x, y: previewMesh.position.y + (previewMesh.userData.topY ?? 20) / 2, z: previewMesh.position.z }
       : { x: 0, y: 10, z: 0 };
-  scene.render(focus);
+  const speedMps = sim && !finished
+    ? Math.hypot(sim.state.velocity.x, sim.state.velocity.y, sim.state.velocity.z)
+    : undefined;
+  scene.render(focus, speedMps);
   gimbalDom?.updateLabels();
   requestAnimationFrame(frame);
 }

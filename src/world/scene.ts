@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { Vec3 } from '../sim/types';
 import type { WorldSystem } from './system';
+import { FollowZoom } from './followZoom';
 
 export type CameraMode = 'orbit' | 'follow';
 
@@ -40,6 +41,7 @@ export class SceneManager {
   private readonly heldKeys = new Set<string>();
   private readonly clock = new THREE.Clock();
   private readonly worldSystems: WorldSystem[] = [];
+  private readonly followZoom = new FollowZoom();
   private worldElapsed = 0;
   private groundFloor = 0;
 
@@ -145,7 +147,11 @@ export class SceneManager {
     this.camera.position.set(pos.x, pos.y, pos.z);
     this.controls.target.set(target.x, target.y, target.z);
     this.controls.update();
+    this.followZoom.reset();
   }
+
+  /** Clear the follow-zoom scroll factor without reframing (relaunch case). */
+  resetFollowZoom(): void { this.followZoom.reset(); }
 
   /**
    * Debug/verification helper: place the orbit camera deterministically.
@@ -164,8 +170,9 @@ export class SceneManager {
     this.controls.update();
   }
 
-  render(rocketPos: Vec3): void {
+  render(rocketPos: Vec3, speedMps?: number): void {
     const dt = this.clock.getDelta();
+    let zoomed = false;
     if (this.mode === 'follow') {
       // Rigid, zero-lag follow: snap the orbit target to the rocket and translate
       // the camera by the same delta. The rocket stays fixed in frame (only the
@@ -175,6 +182,18 @@ export class SceneManager {
       const delta = desired.sub(this.controls.target);
       this.controls.target.add(delta);
       this.camera.position.add(delta);
+      // Speed-adaptive zoom: ease the orbit distance toward a speed-based
+      // target (× the user's own scroll factor). Only while flying.
+      if (speedMps !== undefined) {
+        zoomed = true;
+        const dist = this.camera.position.distanceTo(this.controls.target);
+        const next = this.followZoom.step(dt, speedMps, dist);
+        const dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
+        if (dir.lengthSq() > 1e-9) {
+          dir.setLength(next);
+          this.camera.position.copy(this.controls.target).add(dir);
+        }
+      }
     }
     this.applyPan(dt);
     this.controls.update();
@@ -187,6 +206,9 @@ export class SceneManager {
     // Never let orbit/pan/follow place the camera below the ground plane.
     const minY = this.groundFloor + 0.12;
     if (this.camera.position.y < minY) this.camera.position.y = minY;
+    // Report the post-clamp distance so a clamp-induced change is not
+    // mistaken for a user scroll on the next frame.
+    if (zoomed) this.followZoom.noteActual(this.camera.position.distanceTo(this.controls.target));
     this.renderer.render(this.scene, this.camera);
   }
 
