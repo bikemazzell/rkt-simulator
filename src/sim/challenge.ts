@@ -2,7 +2,7 @@ import type { ChallengeConfig, ChallengeResult, EnvParams, FlightSummary, Vec3 }
 import { horizontalDistance } from './vec';
 
 export function scoreChallenge(
-  config: ChallengeConfig, env: EnvParams, summary: FlightSummary, landing: Vec3,
+  config: ChallengeConfig, env: EnvParams, _summary: FlightSummary, landing: Vec3,
 ): ChallengeResult {
   // 'height-ladder' is visual-only: it falls through with no score.
   if (config.type === 'landing-zone') {
