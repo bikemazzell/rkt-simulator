@@ -24,7 +24,10 @@ export function buildHeightLadder(
   baseY: number,
   opts: { maxM?: number } = {},
 ): THREE.Group {
-  const maxWholeSteps = Math.max(1, Math.floor((opts.maxM ?? LADDER_MAX_M) / LADDER_STEP_M));
+  // The option is for tests/preview slicing only — it can never exceed the
+  // settled 1000 m cap and a sub-step value yields no rungs.
+  const maxM = Math.min(LADDER_MAX_M, Math.max(0, opts.maxM ?? LADDER_MAX_M));
+  const maxWholeSteps = Math.floor(maxM / LADDER_STEP_M);
   const g = new THREE.Group();
   g.userData.isHeightLadder = true;
   for (let i = 0; i < maxWholeSteps; i++) {

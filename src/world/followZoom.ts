@@ -33,6 +33,9 @@ export class FollowZoom {
       this.userFactor = Math.min(FACTOR_MAX, Math.max(FACTOR_MIN,
         this.userFactor * (currentDist / this.lastAuto)));
     }
+    // The auto distance floors at ZOOM_MIN_M, but the user-scaled result may
+    // go lower — down to 1 m, matching controls.minDistance — so scrolling in
+    // past the auto floor keeps working (top end still caps at ZOOM_MAX_M).
     const desired = Math.min(ZOOM_MAX_M, Math.max(1, autoZoomDistance(speedMps) * this.userFactor));
     const a = 1 - Math.exp(-Math.max(dt, 0) / SMOOTHING_TAU);
     const next = currentDist + (desired - currentDist) * a;

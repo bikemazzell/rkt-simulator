@@ -394,8 +394,9 @@ is owned by the environment's `params` (there is no separate wind field on
   rotor blades, deployed glider wings, explosion burst on CATO/hard
   landing, and a short fading trail line behind the rocket. Kept simple
   (sprites or small meshes), not a full particle engine.
-- **Camera:** OrbitControls for free look; a follow-cam mode that tracks the
-  rocket smoothly. Framing defaults are tuned for meter-scale rockets
+- **Camera:** OrbitControls for free look; a follow-cam mode that rigidly
+  tracks the rocket and, while flying, auto-zooms with speed (§4.3). Framing
+  defaults are tuned for meter-scale rockets
   (near plane 0.5 m, min zoom 1 m, slow pan at close zoom).
 - **Loop:** `requestAnimationFrame` drives rendering; a fixed-step accumulator
   advances the simulation independently so physics is frame-rate independent.
@@ -416,7 +417,8 @@ DOM overlay (not in-canvas) for simplicity:
 - Post-flight summary: apogee, max velocity, flight time, outcome, drift
   distance, and (if a challenge was active) the score. On a crash/CATO the
   summary is delayed briefly so the explosion plays first.
-- Optional challenge panel (choose challenge type + parameters before launch).
+- Optional challenge panel (choose the challenge type before launch; the
+  height ladder needs no parameters).
 - The control panel is **collapsible** (header toggle) and **scrolls within the
   viewport** (`max-height` + `overflow-y`), so it stays usable on small and
   landscape-mobile screens without covering the view.
@@ -468,7 +470,10 @@ Test-first (TDD) for the entire pure `sim/` layer, using **Vitest**:
 - **challenge scoring:** correct score for known landing inputs and boundary
   cases (landing-zone only; the height ladder is visual-only and unscored).
 
-**Rendering/UI** are not unit-tested. They are smoke-tested via **Brave CDP**
+**Rendering/UI** are mostly smoke-tested, but their pure logic is
+unit-tested (height-ladder construction, follow-zoom easing/scroll-factor
+absorption, threshold-crossing/popup aging) and the rest is verified via
+**Brave CDP**
 (remote debugging on port 9222): canvas mounts, a launch runs end-to-end, no
 console errors, telemetry values update during flight, screenshot for visual
 sanity.

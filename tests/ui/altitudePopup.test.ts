@@ -14,6 +14,8 @@ describe('crossedThresholds', () => {
   });
   it('returns every rung crossed in one jump', () => {
     expect(crossedThresholds(40, 160)).toEqual([50, 100, 150]);
+    // First sampled frame of a launch can already be far up at 16x warp.
+    expect(crossedThresholds(0, 160)).toEqual([50, 100, 150]);
   });
   it('ignores descending motion', () => {
     expect(crossedThresholds(160, 40)).toEqual([]);

@@ -49,4 +49,10 @@ describe('buildHeightLadder', () => {
     const ladder = buildHeightLadder(0, { maxM: 970 });
     expect(rungs(ladder).length).toBe(19); // 970 floors down to 950
   });
+
+  it('clamps the maxM option to the 1000 m cap and allows zero rungs', () => {
+    expect(rungs(buildHeightLadder(0, { maxM: 1050 })).length).toBe(20); // capped
+    expect(rungs(buildHeightLadder(0, { maxM: 30 })).length).toBe(0); // below one step
+    expect(rungs(buildHeightLadder(0, { maxM: -100 })).length).toBe(0);
+  });
 });

@@ -67,6 +67,13 @@ describe('FollowZoom.step', () => {
     expect(z.userFactor).toBeCloseTo(1, 3); // not folded in as a scroll
     expect(d).toBeCloseTo(autoZoomDistance(50), 0);
   });
+  it('lets the user scroll in past the 6 m auto floor (down to 1 m)', () => {
+    const z = new FollowZoom();
+    z.userFactor = 1 / 64;
+    let d = ZOOM_MIN_M;
+    for (let i = 0; i < 600; i++) d = z.step(1 / 60, 0, d);
+    expect(d).toBeCloseTo(1, 1); // auto floor 6 m × factor 1/64 clamps at 1 m
+  });
   it('zero dt does not move the distance', () => {
     const z = new FollowZoom();
     expect(z.step(0, 100, 6)).toBeCloseTo(6, 6);

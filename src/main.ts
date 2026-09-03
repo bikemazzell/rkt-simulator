@@ -312,8 +312,9 @@ function launch(): void {
     groundHeight = relaunchFrom.y; // HUD altitude above the resting spot
     scene.resetFollowZoom(); // fresh zoom factor; world/camera are kept as-is
     // The kept world still holds the pad ladder (if the challenge was on), so
-    // popups keep measuring against the same ladderBaseY — just reset tracking.
-    prevAltitudeM = null;
+    // popups keep measuring against the same ladderBaseY — just reset tracking
+    // from this flight's true starting altitude (it may start well above 0).
+    prevAltitudeM = ladderBaseY !== null ? relaunchFrom.y - ladderBaseY : null;
     altPopups.clear();
     finished = false;
     accumulator = 0;
@@ -336,7 +337,7 @@ function launch(): void {
   addHeightLadder(sel.challenge, params);
   scene.setGroundFloor(params.groundHeight);
   ladderBaseY = sel.challenge.type === 'height-ladder' ? params.launchY ?? params.groundHeight : null;
-  prevAltitudeM = null;
+  prevAltitudeM = 0; // the flight starts at the ladder base
   altPopups.clear();
 
   sim = new Simulation({

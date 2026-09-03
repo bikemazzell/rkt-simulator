@@ -172,7 +172,7 @@ export class SceneManager {
 
   render(rocketPos: Vec3, speedMps?: number): void {
     const dt = this.clock.getDelta();
-    let zoomed = false;
+    const followZoomActive = this.mode === 'follow' && speedMps !== undefined;
     if (this.mode === 'follow') {
       // Rigid, zero-lag follow: snap the orbit target to the rocket and translate
       // the camera by the same delta. The rocket stays fixed in frame (only the
@@ -182,21 +182,23 @@ export class SceneManager {
       const delta = desired.sub(this.controls.target);
       this.controls.target.add(delta);
       this.camera.position.add(delta);
-      // Speed-adaptive zoom: ease the orbit distance toward a speed-based
-      // target (× the user's own scroll factor). Only while flying.
-      if (speedMps !== undefined) {
-        zoomed = true;
-        const dist = this.camera.position.distanceTo(this.controls.target);
-        const next = this.followZoom.step(dt, speedMps, dist);
-        const dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
-        if (dir.lengthSq() > 1e-9) {
-          dir.setLength(next);
-          this.camera.position.copy(this.controls.target).add(dir);
-        }
-      }
     }
     this.applyPan(dt);
     this.controls.update();
+    // Speed-adaptive zoom: ease the orbit distance toward a speed-based target
+    // (× the user's own scroll factor), follow mode + flying only.
+    // ORDER INVARIANT: this MUST run after controls.update() — the wheel
+    // dolly lands inside update(), so measuring before it hides the user's
+    // scroll from FollowZoom.step() and the absorption never fires.
+    if (followZoomActive) {
+      const dist = this.camera.position.distanceTo(this.controls.target);
+      const next = this.followZoom.step(dt, speedMps!, dist);
+      const dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
+      if (dir.lengthSq() > 1e-9) {
+        dir.setLength(next);
+        this.camera.position.copy(this.controls.target).add(dir);
+      }
+    }
     // Real-time ambient animation (day/night, clouds, creatures). Deliberately
     // NOT scaled by the sim speed multiplier; the world keeps its own pace.
     // Runs after the camera moves so sky/backdrop systems can recenter on it,
@@ -205,10 +207,14 @@ export class SceneManager {
     for (const sys of this.worldSystems) sys.update(dt, this.worldElapsed, this.camera.position);
     // Never let orbit/pan/follow place the camera below the ground plane.
     const minY = this.groundFloor + 0.12;
-    if (this.camera.position.y < minY) this.camera.position.y = minY;
-    // Report the post-clamp distance so a clamp-induced change is not
-    // mistaken for a user scroll on the next frame.
-    if (zoomed) this.followZoom.noteActual(this.camera.position.distanceTo(this.controls.target));
+    if (this.camera.position.y < minY) {
+      this.camera.position.y = minY;
+      // The clamp changed the camera distance after FollowZoom set it; report
+      // the achieved distance so the delta is not misread as a user scroll.
+      if (followZoomActive) {
+        this.followZoom.noteActual(this.camera.position.distanceTo(this.controls.target));
+      }
+    }
     this.renderer.render(this.scene, this.camera);
   }
 

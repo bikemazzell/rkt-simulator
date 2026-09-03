@@ -868,4 +868,7 @@ panel: APPROVE WITH CHANGES, folded before implementation).
    reset()/launch/relaunch (resetFollowZoom). Orbit mode untouched.
 4. Docs: spec §4.2/§4.3 + testing bullet, README challenges bullet.
 
-Quality: 328/328 tests (47 files), typecheck clean, build OK.
+Quality: 330/330 tests (47 files), typecheck clean, build OK. Post-review fix
+commit (codex+deepseek panel) adds render-order scroll-absorption repair,
+first-frame prevAltitudeM init, maxM clamp, zoom-floor docs + 3 regression
+tests.
