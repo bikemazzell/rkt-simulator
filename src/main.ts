@@ -6,7 +6,6 @@ import type { BuildContext } from './world/environments/types';
 import { makeParamsFor } from './world/environments/params';
 import { buildRocketMesh } from './world/rocketMesh';
 import { buildScaleLineup } from './world/scaleLineup';
-import { buildTargetAltitudeRing } from './world/targetRing';
 import { buildGimbal, GimbalController, attachGimbalControls } from './world/gizmo';
 import { RocketVisual } from './world/effects';
 import { Simulation, DT } from './sim/simulation';
@@ -180,14 +179,6 @@ function addScaleLineup(envId: string, params: EnvParams, rocket: Rocket): void 
   scene.worldGroup.add(buildScaleLineup(rocket, params.launchY ?? params.groundHeight, maxExtent, mulberry32(Date.now() >>> 0)));
 }
 
-// Amber ring at the challenge target altitude so the player can see the
-// rocket pass through (and above) it.
-function addTargetRing(challenge: ChallengeConfig, params: EnvParams): void {
-  if (challenge.type !== 'target-altitude') return;
-  const alt = challenge.targetAltitudeM ?? 150;
-  scene.worldGroup.add(buildTargetAltitudeRing(alt, params.launchY ?? params.groundHeight));
-}
-
 // Shared by preview and launch: rebuild the world from a seed and hand back
 // the build context so callers can use its groundAt sampler.
 function buildEnvironment(env: EnvironmentDef, params: EnvParams, seed: number, showTargetZone: boolean): BuildContext {
@@ -220,7 +211,6 @@ function showPreview(): void {
   applyDebugCam();
   buildEnvironment(env, params, PREVIEW_SEED, sel.challenge.type === 'landing-zone');
   addScaleLineup(env.id, params, rocket);
-  addTargetRing(sel.challenge, params);
   scene.setGroundFloor(params.groundHeight);
 
   previewMesh.position.set(0, params.launchY ?? params.groundHeight, 0);
@@ -320,7 +310,6 @@ function launch(): void {
   applyDebugCam();
   const ctx = buildEnvironment(env, params, seed, sel.challenge.type === 'landing-zone');
   addScaleLineup(env.id, params, rocket);
-  addTargetRing(sel.challenge, params);
   scene.setGroundFloor(params.groundHeight);
 
   sim = new Simulation({

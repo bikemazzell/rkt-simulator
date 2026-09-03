@@ -73,12 +73,11 @@ export interface EnvParams {
   targetZone?: { center: Vec3; radius: number };
 }
 
-export type ChallengeType = 'none' | 'target-altitude' | 'landing-zone';
+export type ChallengeType = 'none' | 'height-ladder' | 'landing-zone';
 
+/** Challenges are launch-time scene overlays; only 'landing-zone' is scored. */
 export interface ChallengeConfig {
   type: ChallengeType;
-  targetAltitudeM?: number;
-  toleranceM?: number;
 }
 
 export interface ChallengeResult { score: number; detail: string; }

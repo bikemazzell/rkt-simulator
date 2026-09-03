@@ -12,17 +12,10 @@ const summary = (apogee: number): FlightSummary => ({
 });
 
 describe('scoreChallenge', () => {
-  it('scores 100 for hitting the target altitude exactly', () => {
-    const r = scoreChallenge({ type: 'target-altitude', targetAltitudeM: 100, toleranceM: 50 }, env, summary(100), vec(0, 0, 0));
-    expect(r.score).toBe(100);
-  });
-  it('scores 0 at the tolerance edge', () => {
-    const r = scoreChallenge({ type: 'target-altitude', targetAltitudeM: 100, toleranceM: 50 }, env, summary(150), vec(0, 0, 0));
+  it('returns no score for height-ladder (visual-only challenge)', () => {
+    const r = scoreChallenge({ type: 'height-ladder' }, env, summary(100), vec(0, 0, 0));
     expect(r.score).toBe(0);
-  });
-  it('scores partial within tolerance', () => {
-    const r = scoreChallenge({ type: 'target-altitude', targetAltitudeM: 100, toleranceM: 50 }, env, summary(125), vec(0, 0, 0));
-    expect(r.score).toBeCloseTo(50, 0);
+    expect(r.detail).toBe('no challenge');
   });
   it('scores landing at zone center as 100', () => {
     const r = scoreChallenge({ type: 'landing-zone' }, env, summary(100), vec(50, 0, 0));

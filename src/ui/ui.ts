@@ -51,7 +51,6 @@ export class Ui {
   private readonly motorCombo: Combo;
   private readonly envSel = el('select', 'rkt-select');
   private readonly challengeSel = el('select', 'rkt-select');
-  private readonly targetAltInput = el('input', 'rkt-input');
   private readonly anyMotorChk = el('input');
   private readonly launchBtn = el('button', 'rkt-btn rkt-btn-primary', 'Launch');
   private readonly speedBtn = el('button', 'rkt-btn', 'Speed: 1x');
@@ -75,22 +74,18 @@ export class Ui {
     this.repopulateMotors();
 
     this.envSel.addEventListener('change', () => this.handlers.onEnvChange(this.envSel.value));
-    // Challenge/target-altitude edits re-render the preview so the altitude
-    // ring marker appears/updates immediately.
+    // Challenge edits re-render the preview so scene overlays (height ladder,
+    // landing zone) appear/update immediately.
     this.challengeSel.addEventListener('change', () => this.handlers.onChallengeChange());
-    this.targetAltInput.addEventListener('change', () => this.handlers.onChallengeChange());
 
     this.anyMotorChk.type = 'checkbox';
     this.anyMotorChk.addEventListener('change', () => this.repopulateMotors());
     const anyLabel = el('label', 'rkt-check');
     anyLabel.append(this.anyMotorChk, document.createTextNode(' Allow any motor (may explode!)'));
 
-    for (const [v, label] of [['none', 'No challenge'], ['target-altitude', 'Hit target altitude'], ['landing-zone', 'Land in zone']] as const) {
+    for (const [v, label] of [['none', 'No challenge'], ['height-ladder', 'Height goal (50 m rings)'], ['landing-zone', 'Land in zone']] as const) {
       this.challengeSel.add(option(v, label));
     }
-    this.targetAltInput.type = 'number';
-    this.targetAltInput.value = '150';
-    this.targetAltInput.min = '10';
 
     const resetBtn = el('button', 'rkt-btn', 'Reset');
     const muteBtn = el('button', 'rkt-btn', 'Unmute');
@@ -119,7 +114,6 @@ export class Ui {
       anyLabel,
       this.field('Environment', this.envSel),
       this.field('Challenge', this.challengeSel),
-      this.field('Target altitude (m)', this.targetAltInput),
       this.buttonRow(this.launchBtn, resetBtn),
       this.buttonRow(camBtn, this.speedBtn),
       this.buttonRow(muteBtn),
@@ -172,11 +166,12 @@ export class Ui {
   }
 
   getSelection(): { rocketId: string; motorId: string; envId: string; challenge: ChallengeConfig } {
-    const type = this.challengeSel.value as ChallengeConfig['type'];
-    const challenge: ChallengeConfig = type === 'target-altitude'
-      ? { type, targetAltitudeM: Number(this.targetAltInput.value) || 150, toleranceM: 50 }
-      : { type };
-    return { rocketId: this.rocketCombo.getValue(), motorId: this.motorCombo.getValue(), envId: this.envSel.value, challenge };
+    return {
+      rocketId: this.rocketCombo.getValue(),
+      motorId: this.motorCombo.getValue(),
+      envId: this.envSel.value,
+      challenge: { type: this.challengeSel.value as ChallengeConfig['type'] },
+    };
   }
 
   updateHud(state: FlightState, groundHeight = 0): void {
