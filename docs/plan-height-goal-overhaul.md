@@ -281,7 +281,9 @@ describe('autoZoomDistance', () => {
   it('grows proportionally with speed', () => {
     expect(autoZoomDistance(100)).toBeCloseTo(ZOOM_MIN_M + 120, 6);
   });
-  it('clamps at the maximum distance', () => {
+  it('clamps at the maximum distance (exactly 495 m/s hits 600)', () => {
+    expect(autoZoomDistance(494.9)).toBeLessThan(ZOOM_MAX_M);
+    expect(autoZoomDistance(495)).toBeCloseTo(ZOOM_MAX_M, 6);
     expect(autoZoomDistance(1000)).toBe(ZOOM_MAX_M);
   });
   it('treats negative or non-finite speed as stationary', () => {
@@ -290,27 +292,31 @@ describe('autoZoomDistance', () => {
   });
 });
 
+// Settling loops run 600 frames = 10 s = 12.5 τ, leaving a residual of
+// e^-12.5 ≈ 4e-6 m, comfortably inside toBeCloseTo(x, 0) (±0.5 m). Shorter
+// loops leave exponentially larger residuals and fail.
 describe('FollowZoom.step', () => {
   it('converges toward auto distance × user factor over time', () => {
     const z = new FollowZoom();
     let d = 6;
-    for (let i = 0; i < 240; i++) d = z.step(1 / 60, 50, d); // 4 s of frames
+    for (let i = 0; i < 600; i++) d = z.step(1 / 60, 50, d);
     expect(d).toBeCloseTo(autoZoomDistance(50), 0);
   });
   it('folds a user scroll-out into the multiplier', () => {
     const z = new FollowZoom();
     let d = 6;
-    for (let i = 0; i < 240; i++) d = z.step(1 / 60, 50, d);
-    const settled = d;
+    for (let i = 0; i < 600; i++) d = z.step(1 / 60, 50, d);
     d *= 2; // user scrolls out 2×
-    for (let i = 0; i < 240; i++) d = z.step(1 / 60, 50, d);
-    expect(d).toBeCloseTo(settled * 2, 0);
+    z.step(1 / 60, 50, d); // let the scroll register
+    for (let i = 0; i < 600; i++) d = z.step(1 / 60, 50, d);
+    expect(z.userFactor).toBeCloseTo(2, 1);
+    expect(d).toBeCloseTo(autoZoomDistance(50) * 2, 0);
   });
   it('clamps the desired distance to the maximum even with a huge user factor', () => {
     const z = new FollowZoom();
     z.userFactor = 100;
     let d = ZOOM_MIN_M;
-    for (let i = 0; i < 240; i++) d = z.step(1 / 60, 0, d);
+    for (let i = 0; i < 600; i++) d = z.step(1 / 60, 0, d);
     expect(d).toBeCloseTo(ZOOM_MAX_M, 0); // 6 × 100 clamps to 600, never above
   });
   it('reset() clears the user factor', () => {
@@ -320,7 +326,18 @@ describe('FollowZoom.step', () => {
     d *= 3;
     z.step(1 / 60, 50, d);
     z.reset();
-    for (let i = 0; i < 240; i++) d = z.step(1 / 60, 50, d);
+    expect(z.userFactor).toBe(1);
+    for (let i = 0; i < 600; i++) d = z.step(1 / 60, 50, d);
+    expect(d).toBeCloseTo(autoZoomDistance(50), 0);
+  });
+  it('noteActual() absorbs an external camera move (ground clamp) as non-user', () => {
+    const z = new FollowZoom();
+    let d = 6;
+    for (let i = 0; i < 600; i++) d = z.step(1 / 60, 50, d);
+    d *= 1.5; // e.g. the ground-floor clamp lifted the camera
+    z.noteActual(d);
+    for (let i = 0; i < 600; i++) d = z.step(1 / 60, 50, d);
+    expect(z.userFactor).toBeCloseTo(1, 3); // not folded in as a scroll
     expect(d).toBeCloseTo(autoZoomDistance(50), 0);
   });
   it('zero dt does not move the distance', () => {
@@ -385,22 +402,39 @@ export class FollowZoom {
     this.userFactor = 1;
     this.lastAuto = 0;
   }
+
+  /**
+   * Report the distance actually in effect after this frame (e.g. after the
+   * ground-floor clamp moved the camera), so the difference is not mistaken
+   * for a user scroll next frame.
+   */
+  noteActual(dist: number): void {
+    if (dist > 0) this.lastAuto = dist;
+  }
 }
 ```
 
 - [ ] **Step 4: Verify task tests pass**
 
 Run: `npx vitest run tests/world/followZoom.test.ts`
-Expected: PASS (9 tests).
+Expected: PASS (11 tests).
 
 - [ ] **Step 5: Wire into SceneManager follow mode**
 
-In `src/world/scene.ts`: add `import { FollowZoom } from './followZoom';`, a `private readonly followZoom = new FollowZoom();` field, change the signature to `render(rocketPos: Vec3, speedMps?: number): void`, call `this.followZoom.reset();` inside `reset()` (after framing), and inside the `if (this.mode === 'follow')` block after the rigid translate:
+In `src/world/scene.ts`: add `import { FollowZoom } from './followZoom';`, a `private readonly followZoom = new FollowZoom();` field, change the signature to `render(rocketPos: Vec3, speedMps?: number): void`, call `this.followZoom.reset();` inside `reset()` (after framing), and add a public passthrough for the relaunch path (which never calls `reset()`):
+
+```ts
+  /** Clear the follow-zoom scroll factor without reframing (relaunch case). */
+  resetFollowZoom(): void { this.followZoom.reset(); }
+```
+
+Inside `render()`, add `let zoomed = false;` at the top, and inside the `if (this.mode === 'follow')` block after the rigid translate:
 
 ```ts
       // Speed-adaptive zoom: ease the orbit distance toward a speed-based
       // target (× the user's own scroll factor). Only while flying.
       if (speedMps !== undefined) {
+        zoomed = true;
         const dist = this.camera.position.distanceTo(this.controls.target);
         const next = this.followZoom.step(dt, speedMps, dist);
         const dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
@@ -411,6 +445,12 @@ In `src/world/scene.ts`: add `import { FollowZoom } from './followZoom';`, a `pr
       }
 ```
 
+Then after the ground-floor clamp (so a clamp-induced distance change is not mistaken for a user scroll next frame), before `renderer.render`:
+
+```ts
+    if (zoomed) this.followZoom.noteActual(this.camera.position.distanceTo(this.controls.target));
+```
+
 In `src/main.ts` `frame()`, replace `scene.render(focus);` with:
 
 ```ts
@@ -419,6 +459,8 @@ In `src/main.ts` `frame()`, replace `scene.render(focus);` with:
     : undefined;
   scene.render(focus, speedMps);
 ```
+
+And in `launch()`'s relaunch branch (before its `return`): `scene.resetFollowZoom();` — that path keeps the world/camera, so without this the previous flight's scroll factor would persist.
 
 (Preview frames pass `undefined` → no auto-zoom; `scene.reset()` on preview/launch already re-frames and clears the factor.)
 
@@ -594,7 +636,7 @@ export class AltitudePopupLayer {
 - [ ] **Step 4: Verify task tests pass**
 
 Run: `npx vitest run tests/ui/altitudePopup.test.ts`
-Expected: PASS (11 tests).
+Expected: PASS (9 tests).
 
 - [ ] **Step 5: Add the popup CSS to `src/ui/ui.css`**
 
@@ -635,7 +677,7 @@ git add -A && git commit -m "feat(ui): rainbow altitude popups on 50m threshold 
 
 In `src/main.ts`:
 
-Imports: `import { AltitudePopupLayer } from './ui/altitudePopup';`, `import { crossedThresholds } from './ui/altitudePopup';` (combine), `import * as THREE from 'three';` (only if needed for the projector vector; reuse existing `computeLabelScreen` from `'./world/gizmo'` — extend that import).
+Imports: `import { AltitudePopupLayer, crossedThresholds } from './ui/altitudePopup';`, add `computeLabelScreen` to the existing `./world/gizmo` import, and add `Vector3` to the named `three` import (`import { MathUtils, Object3D, Euler, Vector3 } from 'three';`) — use `new Vector3(...)`, not `new THREE.Vector3(...)`.
 
 Module state (near the other `let` declarations):
 
@@ -653,7 +695,7 @@ In `showPreview()`: after `scene.setGroundFloor(params.groundHeight);` add
   altPopups.clear();
 ```
 
-In `launch()` fresh-pad branch: after `scene.setGroundFloor(params.groundHeight);` add the same three lines using `params.launchY ?? params.groundHeight`. In the relaunch branch (before its `return`): `ladderBaseY = null; prevAltitudeM = null; altPopups.clear();` (the relaunch world keeps no ladder).
+In `launch()` fresh-pad branch: after `scene.setGroundFloor(params.groundHeight);` add the same three lines using `params.launchY ?? params.groundHeight`. In the relaunch branch (before its `return`): only `prevAltitudeM = null; altPopups.clear();` — the world is kept as-is on relaunch, so the ladder rings are still in the scene at the pad base and popups must keep measuring against that same `ladderBaseY` (leave it untouched).
 
 In `frame()`, inside `if (sim) { ... }` after `ui.updateHud(...)`:
 
@@ -666,13 +708,15 @@ In `frame()`, inside `if (sim) { ... }` after `ui.updateHud(...)`:
     }
 ```
 
-And in `frame()` before `scene.render(...)`, always (real dt, even after finish, so fades finish):
+(Sampling once per rendered frame after the accumulator drains all sub-steps correctly reports every rung in a multi-step ascending jump; a rise-and-fall back across a rung within a single rendered frame at 16× warp goes unreported — accepted, noted here.)
+
+And in `frame()` **after** `scene.render(focus, speedMps);` (same reason `gimbalDom.updateLabels()` runs post-render: `computeLabelScreen` needs this frame's camera matrices, otherwise popups anchor one frame stale), always (real dt, even after finish, so fades finish):
 
 ```ts
-  const dtS = dtMs / 1000;
   if (ladderBaseY !== null && sim) {
+    const dtS = dtMs / 1000;
     altPopups.update(dtS, (alt) => computeLabelScreen(
-      new THREE.Vector3(0, ladderBaseY! + alt, 0), scene.camera,
+      new Vector3(0, ladderBaseY! + alt, 0), scene.camera,
       scene.domElement.clientWidth, scene.domElement.clientHeight,
     ));
   } else {
@@ -680,14 +724,14 @@ And in `frame()` before `scene.render(...)`, always (real dt, even after finish,
   }
 ```
 
-Add `computeLabelScreen` to the existing `./world/gizmo` import in `main.ts` and `Vector3` to the `three` import. (dtMs is already computed at the top of `frame()`.)
-
 - [ ] **Step 2: Update docs**
 
 `docs/spec.md`:
 - Line ~63 ("Two challenge types at launch") and the §4.2 block: describe `height-ladder` (rainbow ring every 50 m to 1000 m, ROYGBIV cycle, crossing popups anchored at each ring, visual-only, no score) and `landing-zone`; note the target-altitude input and apogee scoring were removed.
-- §4.3/controls: document follow-mode speed-adaptive zoom (distance `6 + 1.2·|v|` clamped to 6–600 m, τ 0.8 s ease, scroll acts as a multiplier; orbit mode unaffected).
-- §9 rendering + §10 UI: swap the amber-ring paragraph (line ~101) for the ladder + popup description.
+- §4.3 Controls (the amber-ring paragraph at line ~101): swap it for the ladder + popup description (this paragraph lives in §4.3, not §9).
+- §4.3 camera section: document follow-mode speed-adaptive zoom (distance `6 + 1.2·|v|` clamped to 6–600 m, τ 0.8 s ease, scroll acts as a multiplier; orbit mode unaffected).
+- §14 testing bullet (~line 455, "challenge scoring: correct score for known apogee/landing inputs"): update to landing-zone-only scoring (apogee scoring removed).
+- §10 UI: drop the "Target altitude (m)" field mention; popup overlay description.
 
 `README.md` Challenges bullet (line ~58): "Height goal — a rainbow ring every 50 m to 1000 m with altitude popups as you cross them (visual), land-in-zone (scored)."
 
