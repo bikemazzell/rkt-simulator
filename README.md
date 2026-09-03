@@ -55,8 +55,8 @@ procedural terrain.
   - weather: rain, snow, thunderstorms with lightning and tightened fog
   - fading launch trail behind every flight; chute, streamer, rotor, and
     glider-wing recovery visuals + burst effects, all scaled to the rocket
-- **Challenges** — target-altitude (with an amber altitude ring marking the
-  target in the sky), target-landing-zone (scored) flights.
+- **Challenges** — height goal (a rainbow ring every 50 m up to 1000 m with
+  altitude popups as you cross them; visual), land-in-zone (scored) flights.
 - **Audio** — lightweight synthesized SFX, muted by default.
 
 ## Controls

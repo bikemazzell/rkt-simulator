@@ -7,12 +7,13 @@ import { makeParamsFor } from './world/environments/params';
 import { buildRocketMesh } from './world/rocketMesh';
 import { buildScaleLineup } from './world/scaleLineup';
 import { buildHeightLadder } from './world/heightLadder';
-import { buildGimbal, GimbalController, attachGimbalControls } from './world/gizmo';
+import { buildGimbal, GimbalController, attachGimbalControls, computeLabelScreen } from './world/gizmo';
 import { RocketVisual } from './world/effects';
 import { Simulation, DT } from './sim/simulation';
 import { aimDirection, normalizeAim, AIM_DEFAULT, type AimAngles } from './sim/aim';
 import { Sfx } from './audio/sfx';
 import { Ui } from './ui/ui';
+import { AltitudePopupLayer, crossedThresholds } from './ui/altitudePopup';
 import { rocketById, compatibleMotors, rockets } from './data/rockets';
 import { motorById } from './data/motors';
 import { scoreChallenge } from './sim/challenge';
@@ -20,7 +21,7 @@ import { mulberry32 } from './sim/rng';
 import { RECOVERY_DEVICES } from './sim/recovery';
 import { isWeatherKind } from './world/weather';
 import type { EnvParams, ChallengeConfig, Rocket, RecoveryDevice } from './sim/types';
-import { MathUtils, Object3D, Euler } from 'three';
+import { MathUtils, Object3D, Euler, Vector3 } from 'three';
 
 const host = document.getElementById('app')!;
 const scene = new SceneManager(host);
@@ -115,6 +116,12 @@ let aim: AimAngles = { ...AIM_DEFAULT };
 let gimbalCtl: GimbalController | null = null;
 let gimbalGroup: ReturnType<typeof buildGimbal> | null = null;
 let gimbalDom: { updateLabels(): void; dispose(): void } | null = null;
+
+// Height-goal ladder: popup layer + the ladder's base altitude (set whenever
+// the rainbow rings are in the world; popups measure crossings against it).
+const altPopups = new AltitudePopupLayer(host);
+let ladderBaseY: number | null = null;
+let prevAltitudeM: number | null = null;
 
 const SPEEDS = [1, 4, 16];
 let speed = 1;
@@ -220,6 +227,9 @@ function showPreview(): void {
   addScaleLineup(env.id, params, rocket);
   addHeightLadder(sel.challenge, params);
   scene.setGroundFloor(params.groundHeight);
+  ladderBaseY = sel.challenge.type === 'height-ladder' ? params.launchY ?? params.groundHeight : null;
+  prevAltitudeM = null;
+  altPopups.clear();
 
   previewMesh.position.set(0, params.launchY ?? params.groundHeight, 0);
   scene.scene.add(previewMesh);
@@ -301,6 +311,10 @@ function launch(): void {
     }
     groundHeight = relaunchFrom.y; // HUD altitude above the resting spot
     scene.resetFollowZoom(); // fresh zoom factor; world/camera are kept as-is
+    // The kept world still holds the pad ladder (if the challenge was on), so
+    // popups keep measuring against the same ladderBaseY — just reset tracking.
+    prevAltitudeM = null;
+    altPopups.clear();
     finished = false;
     accumulator = 0;
     last = performance.now();
@@ -321,6 +335,9 @@ function launch(): void {
   addScaleLineup(env.id, params, rocket);
   addHeightLadder(sel.challenge, params);
   scene.setGroundFloor(params.groundHeight);
+  ladderBaseY = sel.challenge.type === 'height-ladder' ? params.launchY ?? params.groundHeight : null;
+  prevAltitudeM = null;
+  altPopups.clear();
 
   sim = new Simulation({
     rocket, motor, environment: params, seed, challenge: sel.challenge,
@@ -356,6 +373,12 @@ function frame(now: number): void {
     // and the wreck stays put until the player launches or resets.
     visual?.update(sim.state);
     ui.updateHud(sim.state, groundHeight);
+    if (ladderBaseY !== null) {
+      const alt = sim.state.position.y - ladderBaseY;
+      const prev = prevAltitudeM ?? alt;
+      for (const t of crossedThresholds(prev, alt)) altPopups.spawn(t);
+      prevAltitudeM = alt;
+    }
     if (sim.done && !finished) { finished = true; finish(); }
   }
   const focus = sim
@@ -367,6 +390,16 @@ function frame(now: number): void {
     ? Math.hypot(sim.state.velocity.x, sim.state.velocity.y, sim.state.velocity.z)
     : undefined;
   scene.render(focus, speedMps);
+  // Popups anchor via camera matrices, so update them post-render (like the
+  // gimbal labels) to avoid a one-frame-stale position.
+  if (ladderBaseY !== null && sim) {
+    altPopups.update(dtMs / 1000, (alt) => computeLabelScreen(
+      new Vector3(0, ladderBaseY! + alt, 0), scene.camera,
+      scene.domElement.clientWidth, scene.domElement.clientHeight,
+    ));
+  } else {
+    altPopups.clear();
+  }
   gimbalDom?.updateLabels();
   requestAnimationFrame(frame);
 }

@@ -61,9 +61,14 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
 ### 4.2 Challenges (light objectives)
 
 - Optional per-launch challenge overlay. Two challenge types at launch:
-  - **Target altitude:** get apogee within a tolerance band of a target.
+  - **Height goal:** a purely visual rainbow ladder — a colored ring every
+    50 m of altitude up to 1000 m (7-color ROYGBIV cycle repeating every
+    350 m). As the rocket climbs through each ring, its altitude ("150 m")
+    pops up at the ring, colored to match, floating up and fading over
+    ~1.2 s. No score, no target-number input.
   - **Landing zone:** land the recovered rocket inside a marked ground zone.
-- A score is computed for the launch (0–100), shown in the summary. Challenges
+- Only the landing zone is scored (0–100, shown in the summary). The old
+  target-altitude input and apogee-vs-target scoring were removed. Challenges
   are opt-in and stateless — no cross-session progression.
 
 ### 4.3 Controls
@@ -78,6 +83,11 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
 - Toggle **follow camera** vs **free orbit**. Follow is *rigid*: the orbit target
   tracks the rocket and the camera translates with it, so the rocket stays framed
   at any altitude while the user's own zoom and orbit angle are preserved.
+  While flying in follow mode the camera also **auto-zooms with speed**: the
+  orbit distance eases toward `clamp(6 + 1.2·|v|, 6, 600)` m (τ ≈ 0.8 s), so
+  faster flight pulls out for context and slowdowns (chute, landing) close in.
+  Scrolling multiplies that auto distance (a persistent per-flight factor,
+  reset on launch/reset), so manual framing still works on top.
 - In **orbit** mode, held **WASD** keys pan the camera continuously across the
   environment and **Q/E** move it vertically up/down (speed scales with zoom
   distance).
@@ -98,10 +108,12 @@ nominally or fail in physically-motivated (and occasionally funny) ways.
   rocket. The scatter is environment-aware — kept within the sea raft and the
   rooftop slab, skipped in the giant bathtub, where the joke scale would break
   it.
-- The **target-altitude challenge** paints an amber ring (with a faint disc and
-  a beacon line down to the pad) at the chosen altitude, so the player can see
-  the rocket pass through and above the target. It appears in the preview and
-  updates immediately when the challenge or altitude is edited.
+- The **height-goal challenge** paints a rainbow ladder: a flat, colored ring
+  every 50 m of altitude (50 m…1000 m) above the launch base, cycling
+  ROYGBIV, so the player can read progress through (and above) the flight.
+  It appears in the preview and updates immediately when the challenge is
+  edited. When the rocket crosses a rung climbing, a matching-color altitude
+  label pops at the ring and fades (~1.2 s, ascending crossings only).
 - **Launch-attitude gimbal.** In the preview, three colored gimbal rings
   (X red, Y green, Z blue) surround the rocket. Dragging a ring rotates the
   rocket about that axis — the ring's label shows the live angle — and
@@ -453,8 +465,8 @@ Test-first (TDD) for the entire pure `sim/` layer, using **Vitest**:
 - **rng:** deterministic sequence for a fixed seed.
 - **environments:** params bundle is deterministic per seed; wind/bounds/target
   zone within expected ranges.
-- **challenge scoring:** correct score for known apogee/landing inputs and
-  boundary cases.
+- **challenge scoring:** correct score for known landing inputs and boundary
+  cases (landing-zone only; the height ladder is visual-only and unscored).
 
 **Rendering/UI** are not unit-tested. They are smoke-tested via **Brave CDP**
 (remote debugging on port 9222): canvas mounts, a launch runs end-to-end, no

@@ -843,3 +843,29 @@ the wind during descent (and the device already slows the rocket in the sim).
   traveling flutter wave replacing the twin rigid rods`; push to main,
   Pages deploy confirmed green via gh.
 
+## Feature round 10 — height-goal overhaul + speed-adaptive camera
+
+User-driven simplification of the height-goal challenge plus a follow-cam
+zoom overhaul. Plan: docs/plan-height-goal-overhaul.md (deepseek+qwen plan
+panel: APPROVE WITH CHANGES, folded before implementation).
+
+1. **Height ladder replaces the target ring** — `ChallengeType
+   'target-altitude'` → `'height-ladder'` (visual-only; ChallengeConfig slimmed
+   to {type}; target-altitude input removed from the panel; apogee-vs-target
+   scoring branch deleted — summary hides unscored challenges as before).
+   New world/heightLadder.ts: flat torus r9 every 50 m to 1000 m, ROYGBIV
+   cycle (repeats every 350 m), no beacons/discs. targetRing.ts deleted.
+2. **Crossing popups** — new ui/altitudePopup.ts: pure crossedThresholds
+   (prev < k·50 <= curr, cap 1000, ascending only) + AltitudePopupLayer DOM
+   labels anchored at the crossed ring (computeLabelScreen), matching rainbow
+   color, float 30 px + fade over 1.2 s, updated post-render like gizmo
+   labels. Relaunch keeps the pad ladder and measures against ladderBaseY.
+3. **Speed-adaptive follow zoom** — new world/followZoom.ts: autoZoomDistance
+   = clamp(6 + 1.2·|v|, 6, 600) m, exponential ease τ 0.8 s, × user scroll
+   factor (absorbed from distance deltas we didn't set; noteActual() prevents
+   the ground-clamp delta from being misread as a scroll). SceneManager.render
+   takes optional speedMps; zoom applies in follow mode only; factor resets on
+   reset()/launch/relaunch (resetFollowZoom). Orbit mode untouched.
+4. Docs: spec §4.2/§4.3 + testing bullet, README challenges bullet.
+
+Quality: 328/328 tests (47 files), typecheck clean, build OK.
