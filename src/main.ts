@@ -6,6 +6,7 @@ import type { BuildContext } from './world/environments/types';
 import { makeParamsFor } from './world/environments/params';
 import { buildRocketMesh } from './world/rocketMesh';
 import { buildScaleLineup } from './world/scaleLineup';
+import { buildHeightLadder } from './world/heightLadder';
 import { buildGimbal, GimbalController, attachGimbalControls } from './world/gizmo';
 import { RocketVisual } from './world/effects';
 import { Simulation, DT } from './sim/simulation';
@@ -179,6 +180,12 @@ function addScaleLineup(envId: string, params: EnvParams, rocket: Rocket): void 
   scene.worldGroup.add(buildScaleLineup(rocket, params.launchY ?? params.groundHeight, maxExtent, mulberry32(Date.now() >>> 0)));
 }
 
+// Rainbow ladder of rings every 50 m when the height-goal challenge is on.
+function addHeightLadder(challenge: ChallengeConfig, params: EnvParams): void {
+  if (challenge.type !== 'height-ladder') return;
+  scene.worldGroup.add(buildHeightLadder(params.launchY ?? params.groundHeight));
+}
+
 // Shared by preview and launch: rebuild the world from a seed and hand back
 // the build context so callers can use its groundAt sampler.
 function buildEnvironment(env: EnvironmentDef, params: EnvParams, seed: number, showTargetZone: boolean): BuildContext {
@@ -211,6 +218,7 @@ function showPreview(): void {
   applyDebugCam();
   buildEnvironment(env, params, PREVIEW_SEED, sel.challenge.type === 'landing-zone');
   addScaleLineup(env.id, params, rocket);
+  addHeightLadder(sel.challenge, params);
   scene.setGroundFloor(params.groundHeight);
 
   previewMesh.position.set(0, params.launchY ?? params.groundHeight, 0);
@@ -310,6 +318,7 @@ function launch(): void {
   applyDebugCam();
   const ctx = buildEnvironment(env, params, seed, sel.challenge.type === 'landing-zone');
   addScaleLineup(env.id, params, rocket);
+  addHeightLadder(sel.challenge, params);
   scene.setGroundFloor(params.groundHeight);
 
   sim = new Simulation({
